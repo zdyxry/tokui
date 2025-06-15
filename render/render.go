@@ -15,8 +15,6 @@ const Version = "v1.0.0-tokei"
 
 type ScanFinished struct{}
 
-var teaProg *tea.Program
-
 type ViewModel struct {
 	dirModel *DirModel
 	nav      *Navigation
@@ -119,10 +117,6 @@ func NewProgressBar(width int, full, empty rune) progress.Model {
 		progress.WithFillCharacters(full, empty),
 		progress.WithoutPercentage(),
 	)
-}
-
-func SetTeaProgram(tp *tea.Program) {
-	teaProg = tp
 }
 
 func buildTable() *table.Model {

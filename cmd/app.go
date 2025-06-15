@@ -131,8 +131,6 @@ func runApp(_ *cobra.Command, args []string) error {
 		tea.WithoutCatchPanics(),
 	)
 
-	render.SetTeaProgram(teaProg)
-
 	if _, err = teaProg.Run(); err != nil {
 		return err
 	}

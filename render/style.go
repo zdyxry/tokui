@@ -23,10 +23,6 @@ var (
 			Foreground(lipgloss.AdaptiveColor{Light: "#343433", Dark: "#C1C6B2"}).
 			Background(lipgloss.AdaptiveColor{Light: "#D9DCCF", Dark: "#353533"})
 
-	topFileStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#ebbd34")).
-			Bold(true)
-
 	helpDescStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#696868"))
 
@@ -41,15 +37,4 @@ var (
 			Inherit(dialogBoxStyle).
 			BorderForeground(lipgloss.Color("240")).
 			BorderBottom(false)
-
-	confirmButtonStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#FFFDF5")).
-				Background(lipgloss.Color("#353533")).
-				Padding(0, 3).
-				Margin(1, 3)
-
-	activeButtonStyle = confirmButtonStyle.
-				Foreground(lipgloss.Color("#FFFDF5")).
-				Background(lipgloss.Color("#FF8531")).
-				Underline(true)
 )
