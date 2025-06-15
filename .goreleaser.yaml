@@ -1,0 +1,43 @@
+version: 2
+project_name: tokui
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: tokui
+    binary: tokui
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+
+archives:
+  - formats: [ tar.gz ]
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    format_overrides:
+      - goos: windows
+        formats: [ zip ]
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "README.MD"
+      - "^docs:"
+      - "^test:"
+
+release:
+  github:
+    owner: zdyxry
+    name: tokui
+  name_template: "{{.ProjectName}}-v{{.Version}}"
