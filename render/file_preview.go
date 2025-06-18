@@ -94,7 +94,9 @@ func (fp *FilePreview) readFileContent(filePath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close() // Explicitly ignore the error
+	}()
 
 	// Read content
 	contentBytes, err := io.ReadAll(file)
@@ -237,7 +239,7 @@ func (fp *FilePreview) renderBoxWithContent(title, content, scrollInfo string) s
 
 	// Create the footer with help text and scroll info
 	helpText := "Press 'q' to close, ↑/↓/j/k to scroll, PgUp/PgDn for page navigation"
-	footer := helpText
+	var footer string
 	if scrollInfo != "" {
 		// Calculate spacing for justified layout
 		availableSpace := innerWidth - lipgloss.Width(helpText) - lipgloss.Width(scrollInfo)
