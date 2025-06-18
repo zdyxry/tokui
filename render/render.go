@@ -50,12 +50,20 @@ func (vm *ViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					selectedRow := vm.dirModel.dirsTable.SelectedRow()
 					entryName := selectedRow[2]
 
-					// Exit search mode
+					// Exit search mode first
 					vm.dirModel.ExitSearchMode()
 
-					// Navigate using the directory name
-					vm.nav.Down(entryName, 0)
-					vm.dirModel.Update(ScanFinished{})
+					// Check if the selected entry is a file or directory
+					entry := vm.nav.Entry().GetChild(entryName)
+					if entry != nil && !entry.IsDir {
+						// It's a file, show preview
+						filePath := vm.nav.AbsPathFromSelectedRow(selectedRow)
+						vm.dirModel.ShowFilePreview(filePath)
+					} else {
+						// It's a directory, navigate into it
+						vm.nav.Down(entryName, 0)
+						vm.dirModel.Update(ScanFinished{})
+					}
 				} else {
 					// If no valid row is selected, just exit search mode
 					vm.dirModel.ExitSearchMode()
@@ -92,6 +100,18 @@ func (vm *ViewModel) levelDown() {
 	// Column 3 (index 2) contains the entry's base name
 	entryName := selectedRow[2]
 
+	// Get the full path from the navigation system
+	filePath := vm.nav.AbsPathFromSelectedRow(selectedRow)
+
+	// Check if the selected entry is a file or directory
+	entry := vm.nav.Entry().GetChild(entryName)
+	if entry != nil && !entry.IsDir {
+		// It's a file, show preview instead of navigating
+		vm.dirModel.ShowFilePreview(filePath)
+		return
+	}
+
+	// It's a directory, navigate into it
 	vm.nav.Down(entryName, vm.dirModel.dirsTable.Cursor())
 
 	// Notify DirModel that data has changed and needs re-rendering

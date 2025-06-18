@@ -73,7 +73,7 @@ var dirsKeyMap = [][]key.Binding{
 			key.WithKeys(enter.String()),
 			key.WithHelp(
 				bindKeyStyle.Render(enter.String()),
-				helpDescStyle.Render(" - Open directory"),
+				helpDescStyle.Render(" - Open directory / Preview file"),
 			),
 		),
 		key.NewBinding(

@@ -20,6 +20,7 @@ const (
 	PENDING Mode = "PENDING"
 	READY   Mode = "READY"
 	INPUT   Mode = "INPUT"
+	PREVIEW Mode = "PREVIEW"
 )
 
 type CycleLangFilter struct{}
@@ -36,6 +37,7 @@ type DirModel struct {
 	showCart      bool
 	languages     []string
 	langFilterIdx int // -1 represents "All", 0+ represents index in languages slice
+	filePreview   *FilePreview
 }
 
 // NewDirModel creates and initializes a directory view model.
@@ -98,14 +100,31 @@ func (dm *DirModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		dm.filters.Update(msg)
 
 	case tea.KeyMsg:
+		// If in preview mode, handle preview-specific keys
+		if dm.mode == PREVIEW && dm.filePreview != nil {
+			key := strings.ToLower(msg.String())
+			if key == "q" || key == "esc" {
+				// Close file preview
+				dm.mode = READY
+				dm.filePreview = nil
+				return dm, nil
+			}
+			// Pass other keys to the file preview for scrolling
+			_, cmd = dm.filePreview.Update(msg)
+			return dm, cmd
+		}
+
 		if dm.handleKeyBindings(msg) {
 			return dm, nil
 		}
 	}
 
 	// Pass messages to the table to handle navigation (up/down movement, etc.)
-	t, _ := dm.dirsTable.Update(msg)
-	dm.dirsTable = &t
+	// Only update table if not in preview mode
+	if dm.mode != PREVIEW {
+		t, _ := dm.dirsTable.Update(msg)
+		dm.dirsTable = &t
+	}
 
 	return dm, cmd
 }
@@ -142,6 +161,12 @@ func (dm *DirModel) View() string {
 	slices.Reverse(rows)
 
 	bg := lipgloss.JoinVertical(lipgloss.Top, rows...)
+
+	// If in preview mode, overlay the file preview
+	if dm.mode == PREVIEW && dm.filePreview != nil {
+		preview := dm.filePreview.View()
+		return OverlayCenter(dm.width, dm.height, bg, preview)
+	}
 
 	// If needed, overlay the chart display
 	if dm.showCart {
@@ -404,4 +429,19 @@ func (dm *DirModel) ExitSearchMode() {
 		}
 		dm.updateTableData()
 	}
+}
+
+// ShowFilePreview creates and shows a file preview
+func (dm *DirModel) ShowFilePreview(filePath string) {
+	if dm.mode == PREVIEW {
+		return // Already in preview mode
+	}
+
+	dm.filePreview = NewFilePreview(filePath, dm.width, dm.height)
+	dm.mode = PREVIEW
+}
+
+// IsInPreviewMode returns true if currently showing file preview
+func (dm *DirModel) IsInPreviewMode() bool {
+	return dm.mode == PREVIEW
 }

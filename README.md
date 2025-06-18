@@ -14,6 +14,7 @@
 - **Interactive Terminal UI**: Navigate through your project's directory structure with ease using your keyboard.
 - **Deep Tokei Integration**: Leverages the powerful analysis capabilities of `tokei` for accurate code statistics.
 - **Detailed Data Analysis**: Displays lines of code, comments, blanks, and total lines, categorized by language.
+- **File Preview**: Press `Enter` on any file to instantly preview its contents in a scrollable overlay window.
 - **Visual Charts**: Toggle a pie chart with `Ctrl+w` to intuitively visualize the proportion of each language.
 - **Dynamic Filtering and Searching**:
   - Quickly search by file name (`/`).
@@ -46,6 +47,26 @@ Visually represents the distribution of programming languages in the project.
 │    ███████       █ Markdown: 450 lines         │
 │      ███         ...                           │
 └───────────────────────────────────────────────┘
+```
+
+#### File Preview (`Enter` on files)
+Instantly preview file contents in a scrollable overlay window.
+```
+┌──────────────────── File Preview: main.go ────────────────────────┐
+│                                                                    │
+│  package main                                                      │
+│                                                                    │
+│  import (                                                          │
+│      "fmt"                                                         │
+│      "os"                                                          │
+│  )                                                                 │
+│                                                                    │
+│  func main() {                                                     │
+│      fmt.Println("Hello, World!")                                 │
+│  }                                                                 │
+│                                                                    │
+│  Press 'q' to close, ↑/↓/j/k to scroll, PgUp/PgDn for page   15/23 │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 ## ⚠️ Prerequisites
@@ -119,13 +140,25 @@ Flags:
 | ------------------- | ------------------------------------------------------------------- |
 | `↑` / `k`           | Move cursor up                                                      |
 | `↓` / `j`           | Move cursor down                                                    |
-| `Enter`             | Enter selected directory                                            |
+| `Enter`             | Enter selected directory / Preview file content                    |
 | `Backspace`         | Go back to the parent directory                                     |
 | `Tab`               | Cycle through language filters (All, Go, Python, ...)               |
 | `/`                 | Activate/input file name filter (press `Esc` to exit filter mode)   |
 | `Ctrl`+`w`          | Show/hide language distribution pie chart                         |
 | `?`                 | Show/hide full help                                                 |
-| `q` / `Ctrl`+`c`    | Quit the application                                                |
+| `q` / `Ctrl`+`c`    | Quit the application / Close file preview                          |
+
+### File Preview Mode
+
+When previewing a file, additional keyboard shortcuts are available:
+
+| Key                 | Action                                                              |
+| ------------------- | ------------------------------------------------------------------- |
+| `↑` / `k`           | Scroll up                                                           |
+| `↓` / `j`           | Scroll down                                                         |
+| `PgUp`              | Page up                                                             |
+| `PgDn`              | Page down                                                           |
+| `q` / `Esc`         | Close file preview and return to directory view                    |
 
 ## 🤝 Contributing
 
