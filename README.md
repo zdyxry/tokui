@@ -28,12 +28,12 @@
 A clean table showing code statistics for files and subdirectories in the current path.
 ```
 ┌─ 📊 Code Statistics ───────────────────────────────────────────────────────┐
-│  ICON  NAME                    LANGUAGES        CODE      TOTAL         %   │
+│  ICON  NAME                    LANGUAGES        CODE      TOTAL         %  │
 │  📂    internal                Go, ...          15,021    18,345    65.3%  │
 │  💻    main.go                 Go               850       1,010     3.6%   │
 │  📜    README.md               Markdown         120       150       0.5%   │
-│  ...                                                                        │
-└─────────────────────────────────────────────────────────────────────────────┘
+│  ...                                                                       │
+└────────────────────────────────────────────────────────────────────────────┘
 ```
 
 #### Language Distribution Chart (`Ctrl+w`)
@@ -42,17 +42,17 @@ Visually represents the distribution of programming languages in the project.
 ┌───────────────────────────────────────────────┐
 │                  Language Distribution        │
 │    ███████                                    │
-│  ███████████     █ Go: 18,500 lines            │
-│  ███████████     █ YAML: 2,300 lines           │
-│    ███████       █ Markdown: 450 lines         │
-│      ███         ...                           │
+│  ███████████     █ Go: 18,500 lines           │
+│  ███████████     █ YAML: 2,300 lines          │
+│    ███████       █ Markdown: 450 lines        │
+│      ███         ...                          │
 └───────────────────────────────────────────────┘
 ```
 
 #### File Preview (`Enter` on files)
 Instantly preview file contents in a scrollable overlay window.
 ```
-┌──────────────────── File Preview: main.go ────────────────────────┐
+┌──────────────────── File Preview: main.go ─────────────────────────┐
 │                                                                    │
 │  package main                                                      │
 │                                                                    │
@@ -62,7 +62,7 @@ Instantly preview file contents in a scrollable overlay window.
 │  )                                                                 │
 │                                                                    │
 │  func main() {                                                     │
-│      fmt.Println("Hello, World!")                                 │
+│      fmt.Println("Hello, World!")                                  │
 │  }                                                                 │
 │                                                                    │
 │  Press 'q' to close, ↑/↓/j/k to scroll, PgUp/PgDn for page   15/23 │
@@ -140,13 +140,13 @@ Flags:
 | ------------------- | ------------------------------------------------------------------- |
 | `↑` / `k`           | Move cursor up                                                      |
 | `↓` / `j`           | Move cursor down                                                    |
-| `Enter`             | Enter selected directory / Preview file content                    |
+| `Enter`             | Enter selected directory / Preview file content                     |
 | `Backspace`         | Go back to the parent directory                                     |
 | `Tab`               | Cycle through language filters (All, Go, Python, ...)               |
 | `/`                 | Activate/input file name filter (press `Esc` to exit filter mode)   |
-| `Ctrl`+`w`          | Show/hide language distribution pie chart                         |
+| `Ctrl`+`w`          | Show/hide language distribution pie chart                           |
 | `?`                 | Show/hide full help                                                 |
-| `q` / `Ctrl`+`c`    | Quit the application / Close file preview                          |
+| `q` / `Ctrl`+`c`    | Quit the application / Close file preview                           |
 
 ### File Preview Mode
 
@@ -158,7 +158,7 @@ When previewing a file, additional keyboard shortcuts are available:
 | `↓` / `j`           | Scroll down                                                         |
 | `PgUp`              | Page up                                                             |
 | `PgDn`              | Page down                                                           |
-| `q` / `Esc`         | Close file preview and return to directory view                    |
+| `q` / `Esc`         | Close file preview and return to directory view                     |
 
 ## 🤝 Contributing
 
