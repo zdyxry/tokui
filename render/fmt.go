@@ -6,13 +6,22 @@ import (
 
 // fmtName truncates the name if it exceeds maxWidth and adds ellipsis
 func fmtName(name string, maxWidth int) string {
-	if maxWidth <= 3 {
-		return "..."
+	ellipsis := "..."
+	ellipsisWidth := lipgloss.Width(ellipsis)
+
+	if maxWidth <= ellipsisWidth {
+		return ellipsis
 	}
 
 	if lipgloss.Width(name) <= maxWidth {
 		return name
 	}
 
-	return lipgloss.NewStyle().MaxWidth(maxWidth).Render(name)
+	targetTextVisualWidth := maxWidth - ellipsisWidth
+	if targetTextVisualWidth < 1 {
+		return ellipsis
+	}
+
+	truncatedText := lipgloss.NewStyle().MaxWidth(targetTextVisualWidth).Render(name)
+	return truncatedText + ellipsis
 }
