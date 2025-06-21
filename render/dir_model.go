@@ -180,7 +180,7 @@ func (dm *DirModel) View() string {
 			if i == dm.selectIndex {
 				cursor = lipgloss.NewStyle().Foreground(lipgloss.Color("#3a86ff")).Render("→ ")
 			}
-			checked := "[ ]"
+			var checked string
 			if dm.selectedLangs[lang] {
 				checked = lipgloss.NewStyle().Foreground(lipgloss.Color("#fb5607")).Render("[x]")
 			} else {
@@ -387,7 +387,7 @@ func (dm *DirModel) updateTableData() {
 			activeLangs = append(activeLangs, lang)
 		}
 	}
-	var useMulti bool = len(activeLangs) > 0
+	useMulti := len(activeLangs) > 0
 	var activeLang string
 	if !useMulti && dm.langFilterIdx > -1 && dm.langFilterIdx < len(dm.languages) {
 		activeLang = dm.languages[dm.langFilterIdx]
