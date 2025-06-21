@@ -37,6 +37,13 @@ func (vm *ViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		if vm.dirModel.mode == SELECT_LANG {
+			bk := bindingKey(strings.ToLower(msg.String()))
+			if bk == quit || bk == cancel {
+				return vm, tea.Quit
+			}
+			break
+		}
 		bk := bindingKey(strings.ToLower(msg.String()))
 
 		switch bk {

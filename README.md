@@ -18,7 +18,8 @@
 - **Visual Charts**: Toggle a pie chart with `Ctrl+w` to intuitively visualize the proportion of each language.
 - **Dynamic Filtering and Searching**:
   - Quickly search by file name (`/`).
-  - Filter statistics by a specific language (`Tab`).
+  - Filter statistics by a specific language (`Tab`), or select multiple languages for combined filtering (`Ctrl+L`).
+  - Flexible language selection overlay: Press `Ctrl+L` to open a multi-select menu for languages.
 - **High-Performance & Lightweight**: Written in Go, it compiles to a single, installation-free binary.
 - **Privacy-Focused**: Runs entirely locally. No telemetry or data uploads, ever.
 
@@ -34,6 +35,20 @@ A clean table showing code statistics for files and subdirectories in the curren
 │  📜    README.md               Markdown         120       150       0.5%   │
 │  ...                                                                       │
 └────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Language Selection Overlay (`Ctrl+L`)
+Quickly select one or more languages for combined filtering.
+Use `Space` to toggle selection, `Enter` to confirm, and `Esc` to cancel.
+
+```
+┌──────────── Select Languages ────────────────┐
+│ Space: toggle, Enter: confirm, Esc: cancel   │
+│ →  [x] Go                                    │
+│    [ ] Python                                │
+│    [x] Markdown                              │
+│ ...                                          │
+└──────────────────────────────────────────────┘
 ```
 
 #### Language Distribution Chart (`Ctrl+w`)
@@ -143,6 +158,7 @@ Flags:
 | `Enter`             | Enter selected directory / Preview file content                     |
 | `Backspace`         | Go back to the parent directory                                     |
 | `Tab`               | Cycle through language filters (All, Go, Python, ...)               |
+| `Ctrl`+`L`          | Open multi-language selection overlay (multi-select language filter) |
 | `/`                 | Activate/input file name filter (press `Esc` to exit filter mode)   |
 | `Ctrl`+`w`          | Show/hide language distribution pie chart                           |
 | `?`                 | Show/hide full help                                                 |

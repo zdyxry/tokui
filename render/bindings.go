@@ -19,6 +19,7 @@ const (
 	quickSearch      bindingKey = "/"
 	toggleChart      bindingKey = "ctrl+w"
 	toggleLangFilter bindingKey = "tab"
+	toggleLangSelect bindingKey = "ctrl+l"
 	toggleHelp       bindingKey = "?"
 	left             bindingKey = "left"
 	right            bindingKey = "right"
@@ -104,6 +105,13 @@ var dirsKeyMap = [][]key.Binding{
 			key.WithHelp(
 				bindKeyStyle.Render(quickSearch.String()),
 				helpDescStyle.Render(" - Quick search"),
+			),
+		),
+		key.NewBinding(
+			key.WithKeys(toggleLangSelect.String()),
+			key.WithHelp(
+				bindKeyStyle.Render(toggleLangSelect.String()),
+				helpDescStyle.Render(" - Language select"),
 			),
 		),
 		key.NewBinding(

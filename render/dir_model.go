@@ -23,6 +23,10 @@ const (
 	PREVIEW Mode = "PREVIEW"
 )
 
+const (
+	SELECT_LANG Mode = "SELECT_LANG"
+)
+
 type CycleLangFilter struct{}
 
 type DirModel struct {
@@ -38,6 +42,10 @@ type DirModel struct {
 	languages     []string
 	langFilterIdx int // -1 represents "All", 0+ represents index in languages slice
 	filePreview   *FilePreview
+	// Language select state
+	selectMode     bool
+	selectedLangs  map[string]bool
+	selectIndex    int
 }
 
 // NewDirModel creates and initializes a directory view model.
@@ -67,6 +75,9 @@ func NewDirModel(nav *Navigation) *DirModel {
 		mode:          PENDING,
 		nav:           nav,
 		langFilterIdx: -1, // Default to show all languages
+		selectMode:     false,
+		selectedLangs:  make(map[string]bool),
+		selectIndex:    0,
 	}
 
 	return dm
@@ -132,6 +143,63 @@ func (dm *DirModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (dm *DirModel) View() string {
 	h := lipgloss.Height
 
+	// Language select overlay
+	if dm.mode == SELECT_LANG {
+		var lines []string
+		title := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#3a86ff")).Render("Select Languages")
+		desc := lipgloss.NewStyle().Faint(true).Render("Space: toggle, Enter: confirm, Esc: cancel")
+		lines = append(lines, title)
+		lines = append(lines, desc)
+		// Calculate visible window height (excluding title/desc, at least 2 lines)
+		maxList := dm.height - 6
+		if maxList < 2 {
+			maxList = 2
+		}
+		start := 0
+		end := len(dm.languages)
+		if len(dm.languages) > maxList {
+			// Ensure highlighted item is visible
+			if dm.selectIndex < maxList/2 {
+				start = 0
+			} else if dm.selectIndex > len(dm.languages)-maxList/2 {
+				start = len(dm.languages) - maxList
+			} else {
+				start = dm.selectIndex - maxList/2
+			}
+			end = start + maxList
+			if end > len(dm.languages) {
+				end = len(dm.languages)
+			}
+		}
+		if start > 0 {
+			lines = append(lines, lipgloss.NewStyle().Faint(true).Render("..."))
+		}
+		for i := start; i < end; i++ {
+			lang := dm.languages[i]
+			cursor := "  "
+			if i == dm.selectIndex {
+				cursor = lipgloss.NewStyle().Foreground(lipgloss.Color("#3a86ff")).Render("→ ")
+			}
+			var checked string
+			if dm.selectedLangs[lang] {
+				checked = lipgloss.NewStyle().Foreground(lipgloss.Color("#fb5607")).Render("[x]")
+			} else {
+				checked = lipgloss.NewStyle().Faint(true).Render("[ ]")
+			}
+			langStr := lang
+			if i == dm.selectIndex {
+				langStr = lipgloss.NewStyle().Bold(true).Render(lang)
+			}
+			lines = append(lines, cursor+checked+" "+langStr)
+		}
+		if end < len(dm.languages) {
+			lines = append(lines, lipgloss.NewStyle().Faint(true).Render("..."))
+		}
+		box := chartBoxStyle.Render(lipgloss.JoinVertical(lipgloss.Top, lines...))
+		bg := lipgloss.NewStyle().Width(dm.width).Height(dm.height).Render(" ")
+		return OverlayCenter(dm.width, dm.height, bg, box)
+	}
+
 	summary := dm.dirsSummary()
 	keyBindings := dm.dirsTable.Help.ShortHelpView(shortHelp)
 	if dm.fullHelp {
@@ -184,6 +252,41 @@ func (dm *DirModel) handleKeyBindings(msg tea.KeyMsg) bool {
 
 	bk := bindingKey(strings.ToLower(msg.String()))
 
+	// Language select mode
+	if dm.mode == SELECT_LANG {
+		switch bk {
+		case cancel:
+			return false
+		case escape, toggleLangSelect:
+			dm.mode = READY
+			dm.selectMode = false
+			return true
+		case "up", "k":
+			if dm.selectIndex > 0 {
+				dm.selectIndex--
+			}
+			return true
+		case "down", "j":
+			if dm.selectIndex < len(dm.languages)-1 {
+				dm.selectIndex++
+			}
+			return true
+		case " ":
+			if len(dm.languages) > 0 && dm.selectIndex < len(dm.languages) {
+				lang := dm.languages[dm.selectIndex]
+				dm.selectedLangs[lang] = !dm.selectedLangs[lang]
+			}
+			return true
+		case enter:
+			dm.mode = READY
+			dm.selectMode = false
+			dm.updateTableData()
+			return true
+		}
+	}
+
+	bk = bindingKey(strings.ToLower(msg.String()))
+
 	// Quick search (/ key): activate name filter mode
 	if bk == quickSearch {
 		if dm.mode != INPUT {
@@ -224,6 +327,11 @@ func (dm *DirModel) handleKeyBindings(msg tea.KeyMsg) bool {
 
 	// Handle other shortcuts
 	switch bk {
+	case toggleLangSelect:
+		dm.mode = SELECT_LANG
+		dm.selectMode = true
+		dm.selectIndex = 0
+		return true
 	case toggleLangFilter:
 		// Send message to toggle language filter
 		dm.Update(CycleLangFilter{})
@@ -272,9 +380,16 @@ func (dm *DirModel) updateTableData() {
 	// 1. Preprocess data and calculate the maximum width needed for the Name column.
 	// 2. Set all columns based on the calculated width, then populate data.
 
-	// Get the currently active language filter
+	// Multi-language filter support
+	var activeLangs []string
+	for _, lang := range dm.languages {
+		if dm.selectedLangs != nil && dm.selectedLangs[lang] {
+			activeLangs = append(activeLangs, lang)
+		}
+	}
+	useMulti := len(activeLangs) > 0
 	var activeLang string
-	if dm.langFilterIdx > -1 && dm.langFilterIdx < len(dm.languages) {
+	if !useMulti && dm.langFilterIdx > -1 && dm.langFilterIdx < len(dm.languages) {
 		activeLang = dm.languages[dm.langFilterIdx]
 	}
 
@@ -291,6 +406,55 @@ func (dm *DirModel) updateTableData() {
 
 	for _, child := range dm.nav.Entry().Child {
 		if !dm.filters.Valid(child) {
+			continue
+		}
+		if useMulti {
+			has := false
+			for _, lang := range activeLangs {
+				if s := child.GetStats(lang); s.Total() > 0 {
+					has = true
+					break
+				}
+			}
+			if !has {
+				continue
+			}
+			stats := child.GetStats(activeLangs[0])
+			total := int64(0)
+			for _, lang := range activeLangs {
+				total += child.GetStats(lang).Total()
+			}
+			if total == 0 {
+				continue
+			}
+			// Update the maximum width for the Name column
+			name := child.Name()
+			if lipgloss.Width(name) > maxNameWidth {
+				maxNameWidth = lipgloss.Width(name)
+			}
+			percent := 0.0
+			if parentTotal > 0 {
+				percent = (float64(total) / float64(parentTotal)) * 100
+			}
+			langStr := strings.Join(activeLangs, ", ")
+			if lipgloss.Width(langStr) > tempLangsWidth {
+				langStr = fmtName(langStr, tempLangsWidth)
+				pad := tempLangsWidth - lipgloss.Width(langStr)
+				if pad > 0 {
+					langStr += strings.Repeat(" ", pad)
+				}
+			}
+			rows = append(rows, table.Row{
+				EntryIcon(child),
+				child.Path,
+				name,
+				langStr,
+				strconv.FormatInt(stats.Code, 10),
+				strconv.FormatInt(stats.Comments, 10),
+				strconv.FormatInt(stats.Blanks, 10),
+				strconv.FormatInt(total, 10),
+				fmt.Sprintf("%.2f %%", percent),
+			})
 			continue
 		}
 		stats := child.GetStats(activeLang)
@@ -369,7 +533,16 @@ func (dm *DirModel) dirsSummary() string {
 	}
 
 	activeLang := "All"
-	if dm.langFilterIdx > -1 && dm.langFilterIdx < len(dm.languages) {
+	var activeLangs []string
+	for _, lang := range dm.languages {
+		if dm.selectedLangs != nil && dm.selectedLangs[lang] {
+			activeLangs = append(activeLangs, lang)
+		}
+	}
+	if len(activeLangs) > 0 {
+		activeLang = strings.Join(activeLangs, ", ")
+	}
+	if len(activeLangs) == 0 && dm.langFilterIdx > -1 && dm.langFilterIdx < len(dm.languages) {
 		activeLang = dm.languages[dm.langFilterIdx]
 	}
 	currentStats := dm.nav.Entry().GetStats(activeLang)
