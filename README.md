@@ -9,6 +9,10 @@
 >
 > This project is a fork of the excellent disk space analyzer [noxdir](https://github.com/crumbyte/noxdir), and was heavily modified and refactored by a **Large Language Model (LLM)**, transforming its functionality from a disk analyzer into a code statistics visualizer.
 
+## 📸 Previews
+
+![Demo](./assets/demo.gif)
+
 ## ✨ Features
 
 - **Interactive Terminal UI**: Navigate through your project's directory structure with ease using your keyboard.
@@ -23,7 +27,6 @@
 - **High-Performance & Lightweight**: Written in Go, it compiles to a single, installation-free binary.
 - **Privacy-Focused**: Runs entirely locally. No telemetry or data uploads, ever.
 
-## 📸 Previews
 
 #### Main View
 A clean table showing code statistics for files and subdirectories in the current path.
