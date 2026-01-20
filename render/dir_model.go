@@ -2,6 +2,8 @@ package render
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
 	"slices"
 	"sort"
 	"strconv"
@@ -29,6 +31,21 @@ const (
 
 type CycleLangFilter struct{}
 
+// OpenFileInEditor represents a message to open a file in the default editor.
+type OpenFileInEditor struct {
+	Path string
+}
+
+// EditorFinished represents a message that the editor has finished.
+type EditorFinished struct {
+	Err error
+}
+
+// ErrorMsg represents a message containing an error.
+type ErrorMsg struct {
+	Err error
+}
+
 type DirModel struct {
 	columns       []Column
 	dirsTable     *table.Model
@@ -46,6 +63,7 @@ type DirModel struct {
 	selectMode     bool
 	selectedLangs  map[string]bool
 	selectIndex    int
+	err           error
 }
 
 // NewDirModel creates and initializes a directory view model.
@@ -105,12 +123,28 @@ func (dm *DirModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		dm.updateTableData()
+	case OpenFileInEditor:
+		return dm, openFileWithEditor(msg.Path)
+	case EditorFinished:
+		if msg.Err != nil {
+			return dm, func() tea.Msg {
+				return ErrorMsg{Err: msg.Err}
+			}
+		}
+		return dm, nil
+	case ErrorMsg:
+		dm.err = msg.Err
+		return dm, nil
 
 	case tea.WindowSizeMsg:
 		dm.updateSize(msg.Width, msg.Height)
 		dm.filters.Update(msg)
 
 	case tea.KeyMsg:
+		if dm.err != nil {
+			dm.err = nil
+			return dm, nil
+		}
 		// If in preview mode, handle preview-specific keys
 		if dm.mode == PREVIEW && dm.filePreview != nil {
 			key := strings.ToLower(msg.String())
@@ -125,8 +159,10 @@ func (dm *DirModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return dm, cmd
 		}
 
-		if dm.handleKeyBindings(msg) {
-			return dm, nil
+		// Handle key bindings, potentially returning a command
+		cmd, handled := dm.handleKeyBindings(msg)
+		if handled {
+			return dm, cmd
 		}
 	}
 
@@ -242,12 +278,20 @@ func (dm *DirModel) View() string {
 		return OverlayCenter(dm.width, dm.height, bg, chart)
 	}
 
+	if dm.err != nil {
+		errorView := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#FF0000")).
+			Render(fmt.Sprintf("Error: %v", dm.err))
+		return OverlayCenter(dm.width, dm.height, bg, errorView)
+	}
+
 	return bg
 }
 
-func (dm *DirModel) handleKeyBindings(msg tea.KeyMsg) bool {
+func (dm *DirModel) handleKeyBindings(msg tea.KeyMsg) (tea.Cmd, bool) {
 	if dm.mode == PENDING {
-		return false
+		return nil, false
 	}
 
 	bk := bindingKey(strings.ToLower(msg.String()))
@@ -256,32 +300,32 @@ func (dm *DirModel) handleKeyBindings(msg tea.KeyMsg) bool {
 	if dm.mode == SELECT_LANG {
 		switch bk {
 		case cancel:
-			return false
+			return nil, false
 		case escape, toggleLangSelect:
 			dm.mode = READY
 			dm.selectMode = false
-			return true
+			return nil, true
 		case "up", "k":
 			if dm.selectIndex > 0 {
 				dm.selectIndex--
 			}
-			return true
+			return nil, true
 		case "down", "j":
 			if dm.selectIndex < len(dm.languages)-1 {
 				dm.selectIndex++
 			}
-			return true
+			return nil, true
 		case " ":
 			if len(dm.languages) > 0 && dm.selectIndex < len(dm.languages) {
 				lang := dm.languages[dm.selectIndex]
 				dm.selectedLangs[lang] = !dm.selectedLangs[lang]
 			}
-			return true
+			return nil, true
 		case enter:
 			dm.mode = READY
 			dm.selectMode = false
 			dm.updateTableData()
-			return true
+			return nil, true
 		}
 	}
 
@@ -300,7 +344,7 @@ func (dm *DirModel) handleKeyBindings(msg tea.KeyMsg) bool {
 			}
 			dm.updateTableData()
 		}
-		return true
+		return nil, true
 	}
 
 	// If in input mode, handle special keys
@@ -313,38 +357,49 @@ func (dm *DirModel) handleKeyBindings(msg tea.KeyMsg) bool {
 				dm.filters.ToggleFilter(filter.NameFilterID) // Turn off filter
 			}
 			dm.updateTableData()
-			return true
+			return nil, true
 		}
 		// Enter key in filter mode is not handled, let the upper layer handle navigation
 		if bk == enter {
-			return false // Let the upper ViewModel handle navigation
+			return nil, false // Let the upper ViewModel handle navigation
 		}
 		// Other keys are passed to the filter for input processing
 		dm.filters.Update(msg)
 		dm.updateTableData()
-		return true
+		return nil, true
 	}
 
 	// Handle other shortcuts
 	switch bk {
+	case editFile:
+		if dm.nav.Entry() != nil && len(dm.nav.Entry().Child) > dm.dirsTable.Cursor() {
+			entry := dm.nav.Entry().Child[dm.dirsTable.Cursor()]
+			if entry != nil && !entry.IsDir {
+				cmd := func() tea.Msg {
+					return OpenFileInEditor{Path: entry.Path}
+				}
+				return cmd, true
+			}
+		}
+
 	case toggleLangSelect:
 		dm.mode = SELECT_LANG
 		dm.selectMode = true
 		dm.selectIndex = 0
-		return true
+		return nil, true
 	case toggleLangFilter:
 		// Send message to toggle language filter
 		dm.Update(CycleLangFilter{})
-		return true
+		return nil, true
 	case toggleChart:
 		dm.showCart = !dm.showCart
-		return true
+		return nil, true
 	case toggleHelp:
 		dm.fullHelp = !dm.fullHelp
-		return true
+		return nil, true
 	}
 
-	return false
+	return nil, false
 }
 
 // updateLanguages collects available languages from current and child entries
@@ -617,4 +672,17 @@ func (dm *DirModel) ShowFilePreview(filePath string) {
 // IsInPreviewMode returns true if currently showing file preview
 func (dm *DirModel) IsInPreviewMode() bool {
 	return dm.mode == PREVIEW
+}
+
+func openFileWithEditor(filePath string) tea.Cmd {
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = "vim" // Default to vim
+	}
+
+	cmd := exec.Command(editor, filePath)
+
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return EditorFinished{Err: err}
+	})
 }
