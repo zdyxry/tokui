@@ -128,7 +128,7 @@ func (dm *DirModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case EditorFinished:
 		if msg.Err != nil {
 			return dm, func() tea.Msg {
-				return ErrorMsg{Err: msg.Err}
+				return ErrorMsg(msg)
 			}
 		}
 		return dm, nil
