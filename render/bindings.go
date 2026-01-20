@@ -16,6 +16,7 @@ const (
 	cancel           bindingKey = "ctrl+c"
 	escape           bindingKey = "esc"
 	enter            bindingKey = "enter"
+	editFile         bindingKey = "e"
 	quickSearch      bindingKey = "/"
 	toggleChart      bindingKey = "ctrl+w"
 	toggleLangFilter bindingKey = "tab"
@@ -40,6 +41,13 @@ var navigateKeyMap = [][]key.Binding{
 			key.WithHelp(
 				bindKeyStyle.Render("↑/k"),
 				helpDescStyle.Render(" - Move up"),
+			),
+		),
+		key.NewBinding(
+			key.WithKeys(editFile.String()),
+			key.WithHelp(
+				bindKeyStyle.Render(editFile.String()),
+				helpDescStyle.Render(" - Open file in editor"),
 			),
 		),
 		key.NewBinding(

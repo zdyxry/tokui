@@ -159,6 +159,7 @@ Flags:
 | `↑` / `k`           | Move cursor up                                                      |
 | `↓` / `j`           | Move cursor down                                                    |
 | `Enter`             | Enter selected directory / Preview file content                     |
+| `e`                 | Open file in editor                                                 |
 | `Backspace`         | Go back to the parent directory                                     |
 | `Tab`               | Cycle through language filters (All, Go, Python, ...)               |
 | `Ctrl`+`L`          | Open multi-language selection overlay (multi-select language filter) |
