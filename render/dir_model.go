@@ -64,10 +64,11 @@ type DirModel struct {
 	selectedLangs  map[string]bool
 	selectIndex    int
 	err           error
+	tokeiVersion  string
 }
 
 // NewDirModel creates and initializes a directory view model.
-func NewDirModel(nav *Navigation) *DirModel {
+func NewDirModel(nav *Navigation, tokeiVersion string) *DirModel {
 	// Define new column headers for the table
 	columns := []Column{
 		{Title: ""},            // Icon
@@ -96,6 +97,7 @@ func NewDirModel(nav *Navigation) *DirModel {
 		selectMode:     false,
 		selectedLangs:  make(map[string]bool),
 		selectIndex:    0,
+		tokeiVersion:  tokeiVersion,
 	}
 
 	return dm
@@ -603,7 +605,7 @@ func (dm *DirModel) dirsSummary() string {
 	currentStats := dm.nav.Entry().GetStats(activeLang)
 
 	items := []*BarItem{
-		NewBarItem(Version, "#8338ec", 0),
+		NewBarItem(dm.tokeiVersion, "#8338ec", 0),
 		NewBarItem("PATH", "#FF5F87", 0),
 		NewBarItem(dm.nav.Entry().Path, "", -1),
 		NewBarItem("LANG FILTER", "#3a86ff", 0),

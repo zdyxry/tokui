@@ -11,8 +11,6 @@ import (
 	"github.com/muesli/termenv"
 )
 
-const Version = "v1.0.0-tokei"
-
 type ScanFinished struct{}
 
 type ViewModel struct {

@@ -10,6 +10,7 @@ import (
 
 	"github.com/zdyxry/tokui/render"
 	"github.com/zdyxry/tokui/structure"
+	"github.com/zdyxry/tokui/tokei"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
@@ -140,7 +141,11 @@ func runApp(_ *cobra.Command, args []string) error {
 
 func initViewModel(tree *structure.Tree) (*render.ViewModel, error) {
 	nav := render.NewCodeNavigation(tree)
-	dirModel := render.NewDirModel(nav)
+	tokeiVersion, _ := tokei.GetVersion()
+	if tokeiVersion == "" {
+		tokeiVersion = "unknown"
+	}
+	dirModel := render.NewDirModel(nav, tokeiVersion)
 	vm := render.NewViewModel(
 		nav,
 		dirModel,

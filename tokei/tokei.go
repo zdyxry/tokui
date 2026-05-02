@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/zdyxry/tokui/internal/binaries"
 )
@@ -69,6 +70,25 @@ func AnalyzeFromStdin() (LanguageReport, error) {
 	}
 
 	return parseReport(data)
+}
+
+// GetVersion returns the version of the available tokei binary.
+func GetVersion() (string, error) {
+	tokeiPath, err := binaries.TokeiPath()
+	if err != nil {
+		return "", err
+	}
+
+	output, err := exec.Command(tokeiPath, "--version").Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get tokei version: %w", err)
+	}
+
+	fields := strings.Fields(string(output))
+	if len(fields) >= 2 {
+		return fields[1], nil
+	}
+	return "", fmt.Errorf("unexpected tokei version output: %s", string(output))
 }
 
 // parseReport handles both direct and nested tokei JSON formats
