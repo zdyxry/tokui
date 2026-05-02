@@ -24,7 +24,8 @@
   - Quickly search by file name (`/`).
   - Filter statistics by a specific language (`Tab`), or select multiple languages for combined filtering (`Ctrl+L`).
   - Flexible language selection overlay: Press `Ctrl+L` to open a multi-select menu for languages.
-- **High-Performance & Lightweight**: Written in Go, it compiles to a single, installation-free binary.
+- **Zero-Dependency Release**: Pre-built binaries bundle [tokei](https://github.com/XAMPPRocky/tokei) internally—no separate installation required.
+- **High-Performance & Lightweight**: Written in Go, it compiles to a single binary.
 - **Privacy-Focused**: Runs entirely locally. No telemetry or data uploads, ever.
 
 
@@ -89,9 +90,11 @@ Instantly preview file contents in a scrollable overlay window.
 
 ## ⚠️ Prerequisites
 
-**Tokui has a strong dependency on `tokei`**. Before using, please ensure you have `tokei` installed and added to your system's `PATH` environment variable.
+**Pre-built release binaries have tokei embedded**—no manual installation is needed.
 
-- **Install `tokei`**: [https://github.com/XAMPPRocky/tokei#installation](https://github.com/XAMPPRocky/tokei#installation)
+If you are building from source or want to use your own tokei installation, ensure `tokei` is available in your `PATH`. Tokui will automatically prefer the system-installed version if present.
+
+- **Install `tokei`** (optional): [https://github.com/XAMPPRocky/tokei#installation](https://github.com/XAMPPRocky/tokei#installation)
 
 ## 📦 Installation
 
@@ -104,6 +107,9 @@ You can download the latest pre-compiled version from the [Releases](https://git
 git clone https://github.com/zdyxry/tokui.git
 cd tokui
 
+# Download tokei binaries for embedding (optional but recommended)
+make fetch-tokei-binaries
+
 # Build
 make build
 
@@ -111,12 +117,14 @@ make build
 ./bin/tokui
 ```
 
+> **Note**: `make fetch-tokei-binaries` downloads platform-specific tokei binaries that will be embedded into the final executable. If skipped, the build will still succeed using placeholder files; the resulting binary will fallback to a system-installed tokei at runtime.
+
 ## 🛠️ Usage
 
 Tokui supports two modes of operation:
 
 #### 1. Direct Mode (Recommended)
-In this mode, Tokui will automatically call the `tokei` command to analyze the specified directory.
+Tokui will automatically invoke the bundled (or system-installed) `tokei` to analyze the specified directory.
 
 ```bash
 # Analyze the current directory
@@ -127,7 +135,7 @@ tokui /path/to/your/project
 ```
 
 #### 2. Pipe Mode
-You can first run `tokei` manually and pipe its `json` output to `tokui`. This is useful when you need to use more complex arguments for `tokei`.
+If you have `tokei` installed separately, you can run it manually with custom arguments and pipe its JSON output to `tokui`. This is useful for advanced filtering (e.g., `--exclude`).
 
 ```bash
 # Analyze the current directory
@@ -186,4 +194,6 @@ Pull Requests are welcome! If you'd like to add new features or report bugs, ple
 
 ## 📝 License
 
-MIT © [crumbyte](https://github.com/crumbyte), [zdyxry](https://github.com/zdyxry)
+Tokui is licensed under the [MIT License](./LICENSE).
+
+This project bundles a copy of [tokei](https://github.com/XAMPPRocky/tokei) (MIT OR Apache-2.0) for zero-dependency operation. See [THIRD-PARTY-LICENSES](./THIRD-PARTY-LICENSES) for details.

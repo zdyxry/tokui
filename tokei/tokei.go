@@ -7,6 +7,8 @@ import (
 	"io"
 	"os"
 	"os/exec"
+
+	"github.com/zdyxry/tokui/internal/binaries"
 )
 
 // LanguageReport maps language names to their statistics
@@ -32,7 +34,12 @@ type InnerStats struct {
 
 // Analyze runs tokei on the given path and parses its JSON output
 func Analyze(path string) (LanguageReport, error) {
-	cmd := exec.Command("tokei", "--output", "json", path)
+	tokeiPath, err := binaries.TokeiPath()
+	if err != nil {
+		return nil, fmt.Errorf("tokei binary not available: %w. Please install tokei (https://github.com/XAMPPRocky/tokei) or run 'make fetch-tokei-binaries'", err)
+	}
+
+	cmd := exec.Command(tokeiPath, "--output", "json", path)
 
 	output, err := cmd.Output()
 	if err != nil {
