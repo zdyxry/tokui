@@ -37,8 +37,8 @@ func TestTokeiPath_PlaceholderFallback(t *testing.T) {
 	if err != nil {
 		cacheDir = "/tmp"
 	}
-	os.RemoveAll(cacheDir + "/tokui")
-	os.RemoveAll("/tmp/tokui-tokei") // legacy cleanup
+	_ = os.RemoveAll(cacheDir + "/tokui")
+	_ = os.RemoveAll("/tmp/tokui-tokei") // legacy cleanup
 
 	// Reset cache
 	once = sync.Once{}
@@ -49,13 +49,13 @@ func TestTokeiPath_PlaceholderFallback(t *testing.T) {
 	origPath := os.Getenv("PATH")
 	origTokeiPath := os.Getenv("TOKEI_PATH")
 	defer func() {
-		os.Setenv("PATH", origPath)
-		os.Setenv("TOKEI_PATH", origTokeiPath)
+		_ = os.Setenv("PATH", origPath)
+		_ = os.Setenv("TOKEI_PATH", origTokeiPath)
 	}()
 
 	// Clear PATH and TOKEI_PATH to force embedded fallback
-	os.Setenv("PATH", "/nonexistent")
-	os.Unsetenv("TOKEI_PATH")
+	_ = os.Setenv("PATH", "/nonexistent")
+	_ = os.Unsetenv("TOKEI_PATH")
 
 	path, err := TokeiPath()
 	if err == nil {

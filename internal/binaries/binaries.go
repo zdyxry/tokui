@@ -90,24 +90,24 @@ func extractEmbeddedTokei() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to decompress embedded tokei: %w", err)
 	}
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 
 	f, err := os.OpenFile(binaryPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
 	if err != nil {
 		return "", fmt.Errorf("failed to create cache file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	written, err := f.ReadFrom(r)
 	if err != nil {
-		os.Remove(binaryPath)
+		_ = os.Remove(binaryPath)
 		return "", fmt.Errorf("failed to write embedded tokei: %w", err)
 	}
 
 	// Sanity check: real tokei binary should be at least 100KB.
 	// Placeholder files are much smaller (~30 bytes).
 	if written < 100*1024 {
-		os.Remove(binaryPath)
+		_ = os.Remove(binaryPath)
 		return "", fmt.Errorf(
 			"embedded tokei binary is a placeholder; run 'make fetch-tokei-binaries' to download real binaries",
 		)
