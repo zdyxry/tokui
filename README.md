@@ -24,6 +24,7 @@
   - Quickly search by file name (`/`).
   - Filter statistics by a specific language (`Tab`), or select multiple languages for combined filtering (`Ctrl+L`).
   - Flexible language selection overlay: Press `Ctrl+L` to open a multi-select menu for languages.
+- **Tree Mode**: Toggle between navigation mode (enter directories) and tree mode (expand/collapse directories inline) with `t`.
 - **Zero-Dependency Release**: Pre-built binaries bundle [tokei](https://github.com/XAMPPRocky/tokei) internally—no separate installation required.
 - **High-Performance & Lightweight**: Written in Go, it compiles to a single binary.
 - **Privacy-Focused**: Runs entirely locally. No telemetry or data uploads, ever.
@@ -66,6 +67,21 @@ Visually represents the distribution of programming languages in the project.
 │    ███████       █ Markdown: 450 lines        │
 │      ███         ...                          │
 └───────────────────────────────────────────────┘
+```
+
+#### Tree Mode (`t`)
+Toggle tree mode to expand and collapse directories inline without navigating into them. Supports nested expansion.
+```
+┌─ 📊 Code Statistics ───────────────────────────────────────────────────────┐
+│  ICON  NAME                    LANGUAGES        CODE      TOTAL         %  │
+│  📂    src                     Go, ...          15,021    18,345    65.3%  │
+│  ▾     internal                Go, ...          8,200     10,100    35.7%  │
+│          📂 api                Go               4,000     5,000     17.6%  │
+│          💻 handler.go         Go               1,200     1,500      5.3%  │
+│          💻 service.go         Go               800       1,000      3.5%  │
+│  📄    main.go                 Go               850       1,010     3.6%   │
+│  ...                                                                       │
+└────────────────────────────────────────────────────────────────────────────┘
 ```
 
 #### File Preview (`Enter` on files)
@@ -157,6 +173,9 @@ Flags:
   -r, --root string   Specify the root directory to analyze. Defaults to the current directory ".".
                       Example: tokui --root="/path/to/project"
 
+  -t, --tree          Start in tree mode. Directories are expandable inline instead of navigable.
+                      Example: tokui --tree /path/to/project
+
   -h, --help          Show help information
 ```
 
@@ -166,9 +185,10 @@ Flags:
 | ------------------- | ------------------------------------------------------------------- |
 | `↑` / `k`           | Move cursor up                                                      |
 | `↓` / `j`           | Move cursor down                                                    |
-| `Enter`             | Enter selected directory / Preview file content                     |
+| `Enter`             | Enter directory (Nav mode) / Expand-Collapse directory (Tree mode) / Preview file |
 | `e`                 | Open file in editor                                                 |
 | `Backspace`         | Go back to the parent directory                                     |
+| `t`                 | Toggle between navigation mode and tree mode                        |
 | `Tab`               | Cycle through language filters (All, Go, Python, ...)               |
 | `Ctrl`+`L`          | Open multi-language selection overlay (multi-select language filter) |
 | `/`                 | Activate/input file name filter (press `Esc` to exit filter mode)   |

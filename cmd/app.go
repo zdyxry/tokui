@@ -19,6 +19,7 @@ import (
 var (
 	ErrUnknown = errors.New("unknown error")
 	root       string
+	treeMode   bool
 
 	appCmd = &cobra.Command{
 		Use:   "tokui [directory]",
@@ -55,6 +56,13 @@ func init() {
 		"r",
 		".",
 		`Specify the root directory to analyze. Defaults to current directory.`,
+	)
+	appCmd.PersistentFlags().BoolVarP(
+		&treeMode,
+		"tree",
+		"t",
+		false,
+		`Start in tree mode (expandable directories instead of navigation).`,
 	)
 }
 
@@ -120,7 +128,7 @@ func runApp(_ *cobra.Command, args []string) error {
 	}
 
 	// Initialize view model
-	vm, err := initViewModel(tree)
+	vm, err := initViewModel(tree, treeMode)
 	if err != nil {
 		return err
 	}
@@ -139,13 +147,13 @@ func runApp(_ *cobra.Command, args []string) error {
 	return nil
 }
 
-func initViewModel(tree *structure.Tree) (*render.ViewModel, error) {
+func initViewModel(tree *structure.Tree, treeMode bool) (*render.ViewModel, error) {
 	nav := render.NewCodeNavigation(tree)
 	tokeiVersion, _ := tokei.GetVersion()
 	if tokeiVersion == "" {
 		tokeiVersion = "unknown"
 	}
-	dirModel := render.NewDirModel(nav, tokeiVersion)
+	dirModel := render.NewDirModel(nav, tokeiVersion, treeMode)
 	vm := render.NewViewModel(
 		nav,
 		dirModel,

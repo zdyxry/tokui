@@ -33,6 +33,7 @@ type Entry struct {
 	IsDir       bool
 	StatsByLang map[string]CodeStats
 	TotalStats  CodeStats
+	Expanded    bool
 }
 
 func NewDirEntry(path string) *Entry {

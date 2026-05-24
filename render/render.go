@@ -11,7 +11,9 @@ import (
 	"github.com/muesli/termenv"
 )
 
-type ScanFinished struct{}
+type ScanFinished struct {
+	ResetCursor bool
+}
 
 type ViewModel struct {
 	dirModel *DirModel
@@ -48,34 +50,28 @@ func (vm *ViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case quit, cancel:
 			return vm, tea.Quit
 		case enter:
-			// If DirModel is in input mode, special handling is needed
 			if vm.dirModel.mode == INPUT {
-				// Get the currently selected row information before exiting search mode
-				if vm.dirModel.dirsTable.Rows() != nil && len(vm.dirModel.dirsTable.SelectedRow()) >= 3 {
-					selectedRow := vm.dirModel.dirsTable.SelectedRow()
-					entryName := selectedRow[2]
-
-					// Exit search mode first
-					vm.dirModel.ExitSearchMode()
-
-					// Check if the selected entry is a file or directory
-					entry := vm.nav.Entry().GetChild(entryName)
-					if entry != nil && !entry.IsDir {
-						// It's a file, show preview
-						filePath := vm.nav.AbsPathFromSelectedRow(selectedRow)
-						vm.dirModel.ShowFilePreview(filePath)
+				selectedEntry := vm.dirModel.SelectedEntry()
+				vm.dirModel.ExitSearchMode()
+				if selectedEntry != nil {
+					if selectedEntry.IsDir {
+						if vm.dirModel.treeMode {
+							selectedEntry.Expanded = !selectedEntry.Expanded
+							vm.dirModel.Update(ScanFinished{})
+						} else {
+							vm.nav.Down(selectedEntry.Name(), 0)
+							vm.dirModel.Update(ScanFinished{ResetCursor: true})
+						}
 					} else {
-						// It's a directory, navigate into it
-						vm.nav.Down(entryName, 0)
-						vm.dirModel.Update(ScanFinished{})
+						vm.dirModel.ShowFilePreview(selectedEntry.Path)
 					}
-				} else {
-					// If no valid row is selected, just exit search mode
-					vm.dirModel.ExitSearchMode()
 				}
 			} else {
-				// Normal mode Enter handling
-				vm.levelDown()
+				if vm.dirModel.treeMode {
+					vm.toggleExpand()
+				} else {
+					vm.levelDown()
+				}
 			}
 		case backspace:
 			// If DirModel is in input mode, don't handle top-level shortcuts
@@ -102,31 +98,33 @@ func (vm *ViewModel) levelDown() {
 	}
 
 	selectedRow := vm.dirModel.dirsTable.SelectedRow()
-	// Column 3 (index 2) contains the entry's base name
 	entryName := selectedRow[2]
-
-	// Get the full path from the navigation system
 	filePath := vm.nav.AbsPathFromSelectedRow(selectedRow)
 
-	// Check if the selected entry is a file or directory
 	entry := vm.nav.Entry().GetChild(entryName)
 	if entry != nil && !entry.IsDir {
-		// It's a file, show preview instead of navigating
 		vm.dirModel.ShowFilePreview(filePath)
 		return
 	}
 
-	// It's a directory, navigate into it
 	vm.nav.Down(entryName, vm.dirModel.dirsTable.Cursor())
+	vm.dirModel.Update(ScanFinished{ResetCursor: true})
+}
 
-	// Notify DirModel that data has changed and needs re-rendering
+func (vm *ViewModel) toggleExpand() {
+	entry := vm.dirModel.SelectedEntry()
+	if entry == nil || !entry.IsDir {
+		return
+	}
+	entry.Expanded = !entry.Expanded
 	vm.dirModel.Update(ScanFinished{})
 }
 
 func (vm *ViewModel) levelUp() {
-	vm.nav.Up()
-	// Notify DirModel that data has changed and needs re-rendering
-	vm.dirModel.Update(ScanFinished{})
+	if vm.nav.entryStack.len() > 0 {
+		vm.nav.Up()
+		vm.dirModel.Update(ScanFinished{ResetCursor: true})
+	}
 }
 
 // NewProgressBar creates a custom styled progress bar (currently unused)

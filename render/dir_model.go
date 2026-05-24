@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/zdyxry/tokui/filter"
+	"github.com/zdyxry/tokui/structure"
 
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
@@ -46,6 +47,11 @@ type ErrorMsg struct {
 	Err error
 }
 
+type tableEntry struct {
+	entry *structure.Entry
+	depth int
+}
+
 type DirModel struct {
 	columns       []Column
 	dirsTable     *table.Model
@@ -65,10 +71,12 @@ type DirModel struct {
 	selectIndex    int
 	err           error
 	tokeiVersion  string
+	tableEntries   []*tableEntry
+	treeMode       bool
 }
 
 // NewDirModel creates and initializes a directory view model.
-func NewDirModel(nav *Navigation, tokeiVersion string) *DirModel {
+func NewDirModel(nav *Navigation, tokeiVersion string, treeMode bool) *DirModel {
 	// Define new column headers for the table
 	columns := []Column{
 		{Title: ""},            // Icon
@@ -98,13 +106,27 @@ func NewDirModel(nav *Navigation, tokeiVersion string) *DirModel {
 		selectedLangs:  make(map[string]bool),
 		selectIndex:    0,
 		tokeiVersion:  tokeiVersion,
+		treeMode:      treeMode,
 	}
 
 	return dm
 }
 
+func (dm *DirModel) ToggleTreeMode() {
+	dm.treeMode = !dm.treeMode
+	dm.updateTableData()
+}
+
 func (dm *DirModel) Init() tea.Cmd {
 	return nil
+}
+
+func (dm *DirModel) SelectedEntry() *structure.Entry {
+	cursor := dm.dirsTable.Cursor()
+	if cursor < 0 || cursor >= len(dm.tableEntries) {
+		return nil
+	}
+	return dm.tableEntries[cursor].entry
 }
 
 func (dm *DirModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -114,7 +136,7 @@ func (dm *DirModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ScanFinished:
 		dm.mode = READY
 		dm.updateLanguages()
-		dm.updateTableData()
+		dm.updateTableData(msg.ResetCursor)
 
 	case CycleLangFilter:
 		if len(dm.languages) > 0 {
@@ -374,14 +396,12 @@ func (dm *DirModel) handleKeyBindings(msg tea.KeyMsg) (tea.Cmd, bool) {
 	// Handle other shortcuts
 	switch bk {
 	case editFile:
-		if dm.nav.Entry() != nil && len(dm.nav.Entry().Child) > dm.dirsTable.Cursor() {
-			entry := dm.nav.Entry().Child[dm.dirsTable.Cursor()]
-			if entry != nil && !entry.IsDir {
-				cmd := func() tea.Msg {
-					return OpenFileInEditor{Path: entry.Path}
-				}
-				return cmd, true
+		entry := dm.SelectedEntry()
+		if entry != nil && !entry.IsDir {
+			cmd := func() tea.Msg {
+				return OpenFileInEditor{Path: entry.Path}
 			}
+			return cmd, true
 		}
 
 	case toggleLangSelect:
@@ -398,6 +418,9 @@ func (dm *DirModel) handleKeyBindings(msg tea.KeyMsg) (tea.Cmd, bool) {
 		return nil, true
 	case toggleHelp:
 		dm.fullHelp = !dm.fullHelp
+		return nil, true
+	case toggleTree:
+		dm.ToggleTreeMode()
 		return nil, true
 	}
 
@@ -426,16 +449,33 @@ func (dm *DirModel) updateLanguages() {
 	sort.Strings(dm.languages)
 }
 
+func (dm *DirModel) formatTreeName(entry *structure.Entry, depth int) string {
+	var prefix string
+	if entry.IsDir {
+		if entry.Expanded {
+			prefix = "▾ "
+		} else if entry.HasChild() {
+			prefix = "▸ "
+		} else {
+			prefix = "  "
+		}
+	} else {
+		prefix = "  "
+	}
+	indent := strings.Repeat("  ", depth)
+	return indent + prefix + entry.Name()
+}
+
 // updateTableData updates the table rows based on current filters and state
-func (dm *DirModel) updateTableData() {
+func (dm *DirModel) updateTableData(resetCursor ...bool) {
 	if dm.nav.Entry() == nil || !dm.nav.Entry().IsDir {
 		return
 	}
 
-	// --- [Core Modification] ---
-	// Two-step update method:
-	// 1. Preprocess data and calculate the maximum width needed for the Name column.
-	// 2. Set all columns based on the calculated width, then populate data.
+	shouldReset := false
+	if len(resetCursor) > 0 {
+		shouldReset = resetCursor[0]
+	}
 
 	// Multi-language filter support
 	var activeLangs []string
@@ -454,52 +494,185 @@ func (dm *DirModel) updateTableData() {
 	dm.nav.Entry().SortChild()
 	parentTotal := dm.nav.ParentTotalLines(activeLang)
 
-	// --- Step 1: Preprocessing and calculating maximum width ---
-	rows := make([]table.Row, 0, len(dm.nav.Entry().Child))
-	// Initial maximum width is the width of the column header "Name"
+	dm.tableEntries = make([]*tableEntry, 0)
+	rows := make([]table.Row, 0)
 	maxNameWidth := lipgloss.Width(dm.columns[2].Title)
-	// Temporarily set a language column width for truncation, will use final value later
 	tempLangsWidth := 24
 
-	for _, child := range dm.nav.Entry().Child {
-		if !dm.filters.Valid(child) {
-			continue
-		}
-		if useMulti {
-			has := false
-			for _, lang := range activeLangs {
-				if s := child.GetStats(lang); s.Total() > 0 {
-					has = true
-					break
+	if dm.treeMode {
+		var addEntry func(entry *structure.Entry, depth int)
+		addEntry = func(entry *structure.Entry, depth int) {
+			if !dm.filters.Valid(entry) {
+				return
+			}
+			if useMulti {
+				has := false
+				for _, lang := range activeLangs {
+					if s := entry.GetStats(lang); s.Total() > 0 {
+						has = true
+						break
+					}
+				}
+				if !has {
+					return
+				}
+				stats := entry.GetStats(activeLangs[0])
+				total := int64(0)
+				for _, lang := range activeLangs {
+					total += entry.GetStats(lang).Total()
+				}
+				if total == 0 {
+					return
+				}
+				name := dm.formatTreeName(entry, depth)
+				if lipgloss.Width(name) > maxNameWidth {
+					maxNameWidth = lipgloss.Width(name)
+				}
+				percent := 0.0
+				if parentTotal > 0 {
+					percent = (float64(total) / float64(parentTotal)) * 100
+				}
+				langStr := strings.Join(activeLangs, ", ")
+				if lipgloss.Width(langStr) > tempLangsWidth {
+					langStr = fmtName(langStr, tempLangsWidth)
+					pad := tempLangsWidth - lipgloss.Width(langStr)
+					if pad > 0 {
+						langStr += strings.Repeat(" ", pad)
+					}
+				}
+				rows = append(rows, table.Row{
+					EntryIcon(entry),
+					entry.Path,
+					name,
+					langStr,
+					strconv.FormatInt(stats.Code, 10),
+					strconv.FormatInt(stats.Comments, 10),
+					strconv.FormatInt(stats.Blanks, 10),
+					strconv.FormatInt(total, 10),
+					fmt.Sprintf("%.2f %%", percent),
+				})
+				dm.tableEntries = append(dm.tableEntries, &tableEntry{entry: entry, depth: depth})
+				if entry.IsDir && entry.Expanded {
+					entry.SortChild()
+					for _, child := range entry.Child {
+						addEntry(child, depth+1)
+					}
+				}
+				return
+			}
+			stats := entry.GetStats(activeLang)
+			if activeLang != "" && stats.Total() == 0 {
+				return
+			}
+
+			name := dm.formatTreeName(entry, depth)
+			if lipgloss.Width(name) > maxNameWidth {
+				maxNameWidth = lipgloss.Width(name)
+			}
+
+			percent := 0.0
+			if parentTotal > 0 {
+				percent = (float64(stats.Total()) / float64(parentTotal)) * 100
+			}
+			langStr := strings.Join(entry.Languages(), ", ")
+			if lipgloss.Width(langStr) > tempLangsWidth {
+				langStr = fmtName(langStr, tempLangsWidth)
+			}
+			rows = append(rows, table.Row{
+				EntryIcon(entry),
+				entry.Path,
+				name,
+				langStr,
+				strconv.FormatInt(stats.Code, 10),
+				strconv.FormatInt(stats.Comments, 10),
+				strconv.FormatInt(stats.Blanks, 10),
+				strconv.FormatInt(stats.Total(), 10),
+				fmt.Sprintf("%.2f %%", percent),
+			})
+			dm.tableEntries = append(dm.tableEntries, &tableEntry{entry: entry, depth: depth})
+
+			if entry.IsDir && entry.Expanded {
+				entry.SortChild()
+				for _, child := range entry.Child {
+					addEntry(child, depth+1)
 				}
 			}
-			if !has {
+		}
+
+		for _, child := range dm.nav.Entry().Child {
+			addEntry(child, 0)
+		}
+	} else {
+		for _, child := range dm.nav.Entry().Child {
+			if !dm.filters.Valid(child) {
 				continue
 			}
-			stats := child.GetStats(activeLangs[0])
-			total := int64(0)
-			for _, lang := range activeLangs {
-				total += child.GetStats(lang).Total()
-			}
-			if total == 0 {
+			if useMulti {
+				has := false
+				for _, lang := range activeLangs {
+					if s := child.GetStats(lang); s.Total() > 0 {
+						has = true
+						break
+					}
+				}
+				if !has {
+					continue
+				}
+				stats := child.GetStats(activeLangs[0])
+				total := int64(0)
+				for _, lang := range activeLangs {
+					total += child.GetStats(lang).Total()
+				}
+				if total == 0 {
+					continue
+				}
+				name := child.Name()
+				if lipgloss.Width(name) > maxNameWidth {
+					maxNameWidth = lipgloss.Width(name)
+				}
+				percent := 0.0
+				if parentTotal > 0 {
+					percent = (float64(total) / float64(parentTotal)) * 100
+				}
+				langStr := strings.Join(activeLangs, ", ")
+				if lipgloss.Width(langStr) > tempLangsWidth {
+					langStr = fmtName(langStr, tempLangsWidth)
+					pad := tempLangsWidth - lipgloss.Width(langStr)
+					if pad > 0 {
+						langStr += strings.Repeat(" ", pad)
+					}
+				}
+				rows = append(rows, table.Row{
+					EntryIcon(child),
+					child.Path,
+					name,
+					langStr,
+					strconv.FormatInt(stats.Code, 10),
+					strconv.FormatInt(stats.Comments, 10),
+					strconv.FormatInt(stats.Blanks, 10),
+					strconv.FormatInt(total, 10),
+					fmt.Sprintf("%.2f %%", percent),
+				})
+				dm.tableEntries = append(dm.tableEntries, &tableEntry{entry: child, depth: 0})
 				continue
 			}
-			// Update the maximum width for the Name column
+			stats := child.GetStats(activeLang)
+			if activeLang != "" && stats.Total() == 0 {
+				continue
+			}
+
 			name := child.Name()
 			if lipgloss.Width(name) > maxNameWidth {
 				maxNameWidth = lipgloss.Width(name)
 			}
+
 			percent := 0.0
 			if parentTotal > 0 {
-				percent = (float64(total) / float64(parentTotal)) * 100
+				percent = (float64(stats.Total()) / float64(parentTotal)) * 100
 			}
-			langStr := strings.Join(activeLangs, ", ")
+			langStr := strings.Join(child.Languages(), ", ")
 			if lipgloss.Width(langStr) > tempLangsWidth {
 				langStr = fmtName(langStr, tempLangsWidth)
-				pad := tempLangsWidth - lipgloss.Width(langStr)
-				if pad > 0 {
-					langStr += strings.Repeat(" ", pad)
-				}
 			}
 			rows = append(rows, table.Row{
 				EntryIcon(child),
@@ -509,42 +682,11 @@ func (dm *DirModel) updateTableData() {
 				strconv.FormatInt(stats.Code, 10),
 				strconv.FormatInt(stats.Comments, 10),
 				strconv.FormatInt(stats.Blanks, 10),
-				strconv.FormatInt(total, 10),
+				strconv.FormatInt(stats.Total(), 10),
 				fmt.Sprintf("%.2f %%", percent),
 			})
-			continue
+			dm.tableEntries = append(dm.tableEntries, &tableEntry{entry: child, depth: 0})
 		}
-		stats := child.GetStats(activeLang)
-		if activeLang != "" && stats.Total() == 0 {
-			continue
-		}
-
-		// Update the maximum width for the Name column
-		name := child.Name()
-		if lipgloss.Width(name) > maxNameWidth {
-			maxNameWidth = lipgloss.Width(name)
-		}
-
-		// Prepare row data (to be populated into the table later)
-		percent := 0.0
-		if parentTotal > 0 {
-			percent = (float64(stats.Total()) / float64(parentTotal)) * 100
-		}
-		langStr := strings.Join(child.Languages(), ", ")
-		if lipgloss.Width(langStr) > tempLangsWidth {
-			langStr = fmtName(langStr, tempLangsWidth)
-		}
-		rows = append(rows, table.Row{
-			EntryIcon(child),
-			child.Path, // Hidden
-			name,
-			langStr,
-			strconv.FormatInt(stats.Code, 10),
-			strconv.FormatInt(stats.Comments, 10),
-			strconv.FormatInt(stats.Blanks, 10),
-			strconv.FormatInt(stats.Total(), 10),
-			fmt.Sprintf("%.2f %%", percent),
-		})
 	}
 
 	// --- Step 2: Calculate and set final column widths ---
@@ -553,23 +695,18 @@ func (dm *DirModel) updateTableData() {
 	numericWidth := 12
 	languagesWidth := 24
 
-	// The ideal width for the Name column is the maximum content width + 2
 	nameWidth := maxNameWidth + 2
 
-	// **Screen overflow handling**: Check if the ideal widths of all columns exceed the total screen width
 	fixedWidths := iconWidth + languagesWidth + (4 * numericWidth) + percentWidth
 	totalRequiredWidth := fixedWidths + nameWidth
 
 	if totalRequiredWidth > dm.width {
-		// If it exceeds, shrink the Name column to fit the screen
 		nameWidth = dm.width - fixedWidths
-		// Ensure the Name column has at least 20 characters width to prevent it from disappearing completely
 		if nameWidth < 20 {
 			nameWidth = 20
 		}
 	}
 
-	// Set the final column configuration
 	widths := []int{
 		iconWidth, 0, nameWidth, languagesWidth, numericWidth,
 		numericWidth, numericWidth, numericWidth, percentWidth,
@@ -580,8 +717,22 @@ func (dm *DirModel) updateTableData() {
 	}
 
 	dm.dirsTable.SetColumns(columns)
-	dm.dirsTable.SetRows(rows) // Use preprocessed row data
-	dm.dirsTable.SetCursor(dm.nav.cursor)
+	dm.dirsTable.SetRows(rows)
+
+	if len(rows) > 0 {
+		if shouldReset && dm.nav.cursor < len(rows) {
+			dm.dirsTable.SetCursor(dm.nav.cursor)
+		} else {
+			savedCursor := dm.dirsTable.Cursor()
+			if savedCursor < len(rows) {
+				dm.dirsTable.SetCursor(savedCursor)
+			} else if dm.nav.cursor < len(rows) {
+				dm.dirsTable.SetCursor(dm.nav.cursor)
+			} else {
+				dm.dirsTable.SetCursor(len(rows) - 1)
+			}
+		}
+	}
 }
 
 func (dm *DirModel) dirsSummary() string {
@@ -604,10 +755,16 @@ func (dm *DirModel) dirsSummary() string {
 	}
 	currentStats := dm.nav.Entry().GetStats(activeLang)
 
+	modeStr := "Nav"
+	if dm.treeMode {
+		modeStr = "Tree"
+	}
 	items := []*BarItem{
 		NewBarItem(dm.tokeiVersion, "#8338ec", 0),
 		NewBarItem("PATH", "#FF5F87", 0),
 		NewBarItem(dm.nav.Entry().Path, "", -1),
+		NewBarItem("MODE", "#06ffa5", 0),
+		NewBarItem(modeStr, "", 0),
 		NewBarItem("LANG FILTER", "#3a86ff", 0),
 		NewBarItem(activeLang, "", 0),
 		NewBarItem("CODE", "#fb5607", 0),

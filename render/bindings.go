@@ -22,6 +22,7 @@ const (
 	toggleLangFilter bindingKey = "tab"
 	toggleLangSelect bindingKey = "ctrl+l"
 	toggleHelp       bindingKey = "?"
+	toggleTree       bindingKey = "t"
 	left             bindingKey = "left"
 	right            bindingKey = "right"
 )
@@ -82,7 +83,7 @@ var dirsKeyMap = [][]key.Binding{
 			key.WithKeys(enter.String()),
 			key.WithHelp(
 				bindKeyStyle.Render(enter.String()),
-				helpDescStyle.Render(" - Open directory / Preview file"),
+				helpDescStyle.Render(" - Open/Expand dir / Preview file"),
 			),
 		),
 		key.NewBinding(
@@ -90,6 +91,13 @@ var dirsKeyMap = [][]key.Binding{
 			key.WithHelp(
 				bindKeyStyle.Render(backspace.String()),
 				helpDescStyle.Render(" - Go back up"),
+			),
+		),
+		key.NewBinding(
+			key.WithKeys(toggleTree.String()),
+			key.WithHelp(
+				bindKeyStyle.Render(toggleTree.String()),
+				helpDescStyle.Render(" - Toggle tree mode"),
 			),
 		),
 		key.NewBinding(
