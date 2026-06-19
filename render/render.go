@@ -28,8 +28,7 @@ func NewViewModel(n *Navigation, dirModel *DirModel) *ViewModel {
 }
 
 func (vm *ViewModel) Init() tea.Cmd {
-	// Disable mouse events as we use keyboard-only interactions
-	return tea.DisableMouse
+	return nil
 }
 
 func (vm *ViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -59,15 +58,19 @@ func (vm *ViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							selectedEntry.Expanded = !selectedEntry.Expanded
 							vm.dirModel.Update(ScanFinished{})
 						} else {
-							vm.nav.Down(selectedEntry.Name(), 0)
+							vm.nav.Down(selectedEntry.Name(), 0, 1)
 							vm.dirModel.Update(ScanFinished{ResetCursor: true})
 						}
 					} else {
 						vm.dirModel.ShowFilePreview(selectedEntry.Path)
 					}
+				} else if vm.dirModel.IsParentSelected() {
+					vm.levelUp()
 				}
 			} else {
-				if vm.dirModel.treeMode {
+				if vm.dirModel.IsParentSelected() {
+					vm.levelUp()
+				} else if vm.dirModel.treeMode {
 					vm.toggleExpand()
 				} else {
 					vm.levelDown()
@@ -80,6 +83,9 @@ func (vm *ViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			vm.levelUp()
 		}
+
+	case tea.MouseMsg:
+		return vm.handleMouseMsg(msg)
 	}
 
 	// Pass all messages to the child model (DirModel) for processing
@@ -88,12 +94,59 @@ func (vm *ViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return vm, cmd
 }
 
+func (vm *ViewModel) handleMouseMsg(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	switch {
+	case vm.dirModel.mode == PREVIEW:
+		// Click outside the preview box closes it; wheel events scroll the viewport.
+		if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && !vm.dirModel.isInsidePreviewBox(msg.X, msg.Y) {
+			vm.dirModel.ClosePreview()
+			return vm, nil
+		}
+		_, cmd = vm.dirModel.filePreview.Update(msg)
+		return vm, cmd
+
+	case vm.dirModel.mode == SELECT_LANG:
+		// Consume all mouse events while the language overlay is open.
+		cmd, _ = vm.dirModel.handleLangSelectMouse(msg)
+		return vm, cmd
+
+	case vm.dirModel.showCart:
+		// Click outside the chart closes it.
+		if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && !vm.dirModel.isInsideChartBox(msg.X, msg.Y) {
+			vm.dirModel.showCart = false
+			return vm, nil
+		}
+		return vm, nil
+	}
+
+	row, clickCount, handled := vm.dirModel.handleTableMouse(msg)
+	if handled {
+		if clickCount >= 2 && row >= 0 {
+			if vm.dirModel.treeMode {
+				vm.toggleExpand()
+			} else {
+				vm.levelDown()
+			}
+		}
+		return vm, nil
+	}
+
+	return vm, nil
+}
+
 func (vm *ViewModel) View() string {
 	return vm.dirModel.View()
 }
 
 func (vm *ViewModel) levelDown() {
 	if vm.dirModel.dirsTable.Rows() == nil || len(vm.dirModel.dirsTable.SelectedRow()) < 3 {
+		return
+	}
+
+	if vm.dirModel.IsParentSelected() {
+		vm.levelUp()
 		return
 	}
 
@@ -107,7 +160,7 @@ func (vm *ViewModel) levelDown() {
 		return
 	}
 
-	vm.nav.Down(entryName, vm.dirModel.dirsTable.Cursor())
+	vm.nav.Down(entryName, vm.dirModel.dirsTable.Cursor(), 1)
 	vm.dirModel.Update(ScanFinished{ResetCursor: true})
 }
 

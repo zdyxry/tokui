@@ -70,7 +70,7 @@ func (n *Navigation) Up() {
 	n.entry, n.cursor = lastItem.entry, lastItem.cursor
 }
 
-func (n *Navigation) Down(name string, cursor int) {
+func (n *Navigation) Down(name string, parentCursor, childCursor int) {
 	if len(name) == 0 {
 		return
 	}
@@ -80,8 +80,8 @@ func (n *Navigation) Down(name string, cursor int) {
 		return
 	}
 
-	n.entryStack.push(&stackItem{entry: n.entry, cursor: cursor})
-	n.entry, n.cursor = entry, 0
+	n.entryStack.push(&stackItem{entry: n.entry, cursor: parentCursor})
+	n.entry, n.cursor = entry, childCursor
 }
 
 // AbsPathFromSelectedRow returns absolute path from selected row, using column 1's hidden path
