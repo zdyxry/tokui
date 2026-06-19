@@ -2,6 +2,17 @@ package render
 
 type SortKey string
 
+const (
+	SortByNone      SortKey = ""
+	SortByName      SortKey = "name"
+	SortByLanguages SortKey = "languages"
+	SortByCode      SortKey = "code"
+	SortByComments  SortKey = "comments"
+	SortByBlanks    SortKey = "blanks"
+	SortByTotal     SortKey = "total"
+	SortByPercent   SortKey = "percent"
+)
+
 type Column struct {
 	Title   string
 	SortKey SortKey
@@ -25,4 +36,11 @@ func (c *Column) FmtName(sortState SortState) string {
 type SortState struct {
 	Key  SortKey
 	Desc bool
+}
+
+func (ss SortState) DirectionArrow() string {
+	if ss.Desc {
+		return "▼"
+	}
+	return "▲"
 }

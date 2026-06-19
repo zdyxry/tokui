@@ -1,6 +1,7 @@
 package render
 
 import (
+	"cmp"
 	"fmt"
 	"os"
 	"os/exec"
@@ -66,28 +67,29 @@ type DirModel struct {
 	langFilterIdx int // -1 represents "All", 0+ represents index in languages slice
 	filePreview   *FilePreview
 	// Language select state
-	selectMode     bool
-	selectedLangs  map[string]bool
-	selectIndex    int
+	selectMode    bool
+	selectedLangs map[string]bool
+	selectIndex   int
 	err           error
 	tokeiVersion  string
-	tableEntries   []*tableEntry
-	treeMode       bool
+	tableEntries  []*tableEntry
+	treeMode      bool
+	sortState     SortState
 }
 
 // NewDirModel creates and initializes a directory view model.
 func NewDirModel(nav *Navigation, tokeiVersion string, treeMode bool) *DirModel {
 	// Define new column headers for the table
 	columns := []Column{
-		{Title: ""},            // Icon
-		{Title: ""},            // Full path (hidden)
-		{Title: "Name"},        // Name
-		{Title: "Languages"},   // Languages involved
-		{Title: "Code"},        // Lines of code
-		{Title: "Comments"},    // Comment lines
-		{Title: "Blanks"},      // Blank lines
-		{Title: "Total"},       // Total lines
-		{Title: "% of Parent"}, // Percentage of parent directory
+		{Title: ""},                          // Icon
+		{Title: ""},                          // Full path (hidden)
+		{Title: "Name", SortKey: SortByName}, // Name
+		{Title: "Languages", SortKey: SortByLanguages}, // Languages involved
+		{Title: "Code", SortKey: SortByCode},           // Lines of code
+		{Title: "Comments", SortKey: SortByComments},   // Comment lines
+		{Title: "Blanks", SortKey: SortByBlanks},       // Blank lines
+		{Title: "Total", SortKey: SortByTotal},         // Total lines
+		{Title: "% of Parent", SortKey: SortByPercent}, // Percentage of parent directory
 	}
 
 	// Keep only the name filter
@@ -102,11 +104,12 @@ func NewDirModel(nav *Navigation, tokeiVersion string, treeMode bool) *DirModel 
 		mode:          PENDING,
 		nav:           nav,
 		langFilterIdx: -1, // Default to show all languages
-		selectMode:     false,
-		selectedLangs:  make(map[string]bool),
-		selectIndex:    0,
+		selectMode:    false,
+		selectedLangs: make(map[string]bool),
+		selectIndex:   0,
 		tokeiVersion:  tokeiVersion,
 		treeMode:      treeMode,
+		sortState:     SortState{Key: SortByTotal, Desc: true},
 	}
 
 	return dm
@@ -422,6 +425,14 @@ func (dm *DirModel) handleKeyBindings(msg tea.KeyMsg) (tea.Cmd, bool) {
 	case toggleTree:
 		dm.ToggleTreeMode()
 		return nil, true
+	case cycleSortColumn:
+		dm.cycleSortColumn()
+		dm.updateTableData()
+		return nil, true
+	case toggleSortOrder:
+		dm.toggleSortOrder()
+		dm.updateTableData()
+		return nil, true
 	}
 
 	return nil, false
@@ -466,6 +477,179 @@ func (dm *DirModel) formatTreeName(entry *structure.Entry, depth int) string {
 	return indent + prefix + entry.Name()
 }
 
+// useMultiLangFilter returns true when one or more languages are selected
+// via the multi-language selection overlay.
+func (dm *DirModel) useMultiLangFilter() bool {
+	if dm.selectedLangs == nil {
+		return false
+	}
+	for _, lang := range dm.languages {
+		if dm.selectedLangs[lang] {
+			return true
+		}
+	}
+	return false
+}
+
+// activeLang returns the currently cycled single-language filter value.
+// It returns "" when "All" is selected or when multi-language filter is active.
+func (dm *DirModel) activeLang() string {
+	if dm.useMultiLangFilter() {
+		return ""
+	}
+	if dm.langFilterIdx > -1 && dm.langFilterIdx < len(dm.languages) {
+		return dm.languages[dm.langFilterIdx]
+	}
+	return ""
+}
+
+// selectedLangs returns the list of languages selected in multi-select mode.
+func (dm *DirModel) selectedLangsList() []string {
+	if dm.selectedLangs == nil {
+		return nil
+	}
+	langs := make([]string, 0)
+	for _, lang := range dm.languages {
+		if dm.selectedLangs[lang] {
+			langs = append(langs, lang)
+		}
+	}
+	return langs
+}
+
+// statusLangLabel returns the human-readable language filter label shown in
+// the status bar: "All", the single filtered language, or the comma-separated
+// list of selected languages.
+func (dm *DirModel) statusLangLabel() string {
+	if dm.useMultiLangFilter() {
+		return strings.Join(dm.selectedLangsList(), ", ")
+	}
+	if lang := dm.activeLang(); lang != "" {
+		return lang
+	}
+	return "All"
+}
+
+// comparableStats returns the CodeStats that should be used for both display
+// and sorting under the current language filter. For single-language filter it
+// returns that language's stats; for multi-language filter it aggregates the
+// selected languages; otherwise it returns the entry's total stats.
+func (dm *DirModel) comparableStats(e *structure.Entry) structure.CodeStats {
+	if !dm.useMultiLangFilter() {
+		return e.GetStats(dm.activeLang())
+	}
+	var sum structure.CodeStats
+	for _, lang := range dm.selectedLangsList() {
+		sum.Add(e.GetStats(lang))
+	}
+	return sum
+}
+
+// buildChildComparator returns a comparator for sorting child entries according
+// to the current SortState and language filter.
+func (dm *DirModel) buildChildComparator() func(a, b *structure.Entry) int {
+	key := dm.sortState.Key
+	desc := dm.sortState.Desc
+
+	// Precompute filter state once to avoid repeated allocations during sorting.
+	useMulti := dm.useMultiLangFilter()
+	activeLang := dm.activeLang()
+	selectedLangs := dm.selectedLangsList()
+
+	getComparableStats := func(e *structure.Entry) structure.CodeStats {
+		if !useMulti {
+			return e.GetStats(activeLang)
+		}
+		var sum structure.CodeStats
+		for _, lang := range selectedLangs {
+			sum.Add(e.GetStats(lang))
+		}
+		return sum
+	}
+
+	cmpVal := func(a, b int64) int {
+		if desc {
+			return cmp.Compare(b, a)
+		}
+		return cmp.Compare(a, b)
+	}
+	cmpStr := func(a, b string) int {
+		r := cmp.Compare(strings.ToLower(a), strings.ToLower(b))
+		if desc {
+			return -r
+		}
+		return r
+	}
+
+	switch key {
+	case SortByName:
+		return func(a, b *structure.Entry) int { return cmpStr(a.Name(), b.Name()) }
+	case SortByLanguages:
+		return func(a, b *structure.Entry) int {
+			return cmpStr(strings.Join(a.Languages(), ", "), strings.Join(b.Languages(), ", "))
+		}
+	case SortByCode:
+		return func(a, b *structure.Entry) int { return cmpVal(getComparableStats(a).Code, getComparableStats(b).Code) }
+	case SortByComments:
+		return func(a, b *structure.Entry) int {
+			return cmpVal(getComparableStats(a).Comments, getComparableStats(b).Comments)
+		}
+	case SortByBlanks:
+		return func(a, b *structure.Entry) int {
+			return cmpVal(getComparableStats(a).Blanks, getComparableStats(b).Blanks)
+		}
+	case SortByTotal, SortByPercent:
+		// SortByPercent is mathematically equivalent to SortByTotal because the
+		// parent total is constant for all siblings being compared.
+		return func(a, b *structure.Entry) int {
+			return cmpVal(getComparableStats(a).Total(), getComparableStats(b).Total())
+		}
+	default:
+		return func(a, b *structure.Entry) int { return cmpVal(a.TotalStats.Total(), b.TotalStats.Total()) }
+	}
+}
+
+// cycleSortColumn advances to the next sortable column and resets the sort
+// direction to the default for that column.
+func (dm *DirModel) cycleSortColumn() {
+	order := []SortKey{
+		SortByName,
+		SortByLanguages,
+		SortByCode,
+		SortByComments,
+		SortByBlanks,
+		SortByTotal,
+		SortByPercent,
+	}
+
+	idx := -1
+	for i, k := range order {
+		if k == dm.sortState.Key {
+			idx = i
+			break
+		}
+	}
+	idx = (idx + 1) % len(order)
+	next := order[idx]
+	dm.sortState = SortState{Key: next, Desc: defaultDescForSortKey(next)}
+}
+
+// toggleSortOrder flips the direction of the current sort column.
+func (dm *DirModel) toggleSortOrder() {
+	dm.sortState.Desc = !dm.sortState.Desc
+}
+
+// defaultDescForSortKey returns the default sort direction for a column:
+// ascending for text columns, descending for numeric columns.
+func defaultDescForSortKey(key SortKey) bool {
+	switch key {
+	case SortByName, SortByLanguages:
+		return false
+	default:
+		return true
+	}
+}
+
 // updateTableData updates the table rows based on current filters and state
 func (dm *DirModel) updateTableData(resetCursor ...bool) {
 	if dm.nav.Entry() == nil || !dm.nav.Entry().IsDir {
@@ -477,22 +661,9 @@ func (dm *DirModel) updateTableData(resetCursor ...bool) {
 		shouldReset = resetCursor[0]
 	}
 
-	// Multi-language filter support
-	var activeLangs []string
-	for _, lang := range dm.languages {
-		if dm.selectedLangs != nil && dm.selectedLangs[lang] {
-			activeLangs = append(activeLangs, lang)
-		}
-	}
-	useMulti := len(activeLangs) > 0
-	var activeLang string
-	if !useMulti && dm.langFilterIdx > -1 && dm.langFilterIdx < len(dm.languages) {
-		activeLang = dm.languages[dm.langFilterIdx]
-	}
-
-	// Sort child entries by total lines
-	dm.nav.Entry().SortChild()
-	parentTotal := dm.nav.ParentTotalLines(activeLang)
+	// Sort child entries using the current column sort state.
+	dm.nav.Entry().SortChildBy(dm.buildChildComparator())
+	parentTotal := dm.nav.ParentTotalLines(dm.activeLang())
 
 	dm.tableEntries = make([]*tableEntry, 0)
 	rows := make([]table.Row, 0)
@@ -505,7 +676,8 @@ func (dm *DirModel) updateTableData(resetCursor ...bool) {
 			if !dm.filters.Valid(entry) {
 				return
 			}
-			if useMulti {
+			if dm.useMultiLangFilter() {
+				activeLangs := dm.selectedLangsList()
 				has := false
 				for _, lang := range activeLangs {
 					if s := entry.GetStats(lang); s.Total() > 0 {
@@ -516,11 +688,8 @@ func (dm *DirModel) updateTableData(resetCursor ...bool) {
 				if !has {
 					return
 				}
-				stats := entry.GetStats(activeLangs[0])
-				total := int64(0)
-				for _, lang := range activeLangs {
-					total += entry.GetStats(lang).Total()
-				}
+				stats := dm.comparableStats(entry)
+				total := stats.Total()
 				if total == 0 {
 					return
 				}
@@ -553,15 +722,15 @@ func (dm *DirModel) updateTableData(resetCursor ...bool) {
 				})
 				dm.tableEntries = append(dm.tableEntries, &tableEntry{entry: entry, depth: depth})
 				if entry.IsDir && entry.Expanded {
-					entry.SortChild()
+					entry.SortChildBy(dm.buildChildComparator())
 					for _, child := range entry.Child {
 						addEntry(child, depth+1)
 					}
 				}
 				return
 			}
-			stats := entry.GetStats(activeLang)
-			if activeLang != "" && stats.Total() == 0 {
+			stats := dm.comparableStats(entry)
+			if dm.activeLang() != "" && stats.Total() == 0 {
 				return
 			}
 
@@ -592,7 +761,7 @@ func (dm *DirModel) updateTableData(resetCursor ...bool) {
 			dm.tableEntries = append(dm.tableEntries, &tableEntry{entry: entry, depth: depth})
 
 			if entry.IsDir && entry.Expanded {
-				entry.SortChild()
+				entry.SortChildBy(dm.buildChildComparator())
 				for _, child := range entry.Child {
 					addEntry(child, depth+1)
 				}
@@ -607,7 +776,8 @@ func (dm *DirModel) updateTableData(resetCursor ...bool) {
 			if !dm.filters.Valid(child) {
 				continue
 			}
-			if useMulti {
+			if dm.useMultiLangFilter() {
+				activeLangs := dm.selectedLangsList()
 				has := false
 				for _, lang := range activeLangs {
 					if s := child.GetStats(lang); s.Total() > 0 {
@@ -618,11 +788,8 @@ func (dm *DirModel) updateTableData(resetCursor ...bool) {
 				if !has {
 					continue
 				}
-				stats := child.GetStats(activeLangs[0])
-				total := int64(0)
-				for _, lang := range activeLangs {
-					total += child.GetStats(lang).Total()
-				}
+				stats := dm.comparableStats(child)
+				total := stats.Total()
 				if total == 0 {
 					continue
 				}
@@ -656,8 +823,8 @@ func (dm *DirModel) updateTableData(resetCursor ...bool) {
 				dm.tableEntries = append(dm.tableEntries, &tableEntry{entry: child, depth: 0})
 				continue
 			}
-			stats := child.GetStats(activeLang)
-			if activeLang != "" && stats.Total() == 0 {
+			stats := dm.comparableStats(child)
+			if dm.activeLang() != "" && stats.Total() == 0 {
 				continue
 			}
 
@@ -697,23 +864,38 @@ func (dm *DirModel) updateTableData(resetCursor ...bool) {
 
 	nameWidth := maxNameWidth + 2
 
-	fixedWidths := iconWidth + languagesWidth + (4 * numericWidth) + percentWidth
-	totalRequiredWidth := fixedWidths + nameWidth
-
-	if totalRequiredWidth > dm.width {
-		nameWidth = dm.width - fixedWidths
-		if nameWidth < 20 {
-			nameWidth = 20
+	// Ensure each column is wide enough for its titled (including sort indicator).
+	minWidths := []int{
+		iconWidth,
+		0,
+		nameWidth,
+		languagesWidth,
+		numericWidth,
+		numericWidth,
+		numericWidth,
+		numericWidth,
+		percentWidth,
+	}
+	for i, c := range dm.columns {
+		titleWidth := lipgloss.Width(c.FmtName(dm.sortState))
+		if titleWidth > minWidths[i] {
+			minWidths[i] = titleWidth
 		}
 	}
 
-	widths := []int{
-		iconWidth, 0, nameWidth, languagesWidth, numericWidth,
-		numericWidth, numericWidth, numericWidth, percentWidth,
+	fixedWidths := minWidths[0] + minWidths[1] + minWidths[3] + minWidths[4] + minWidths[5] + minWidths[6] + minWidths[7] + minWidths[8]
+	totalRequiredWidth := fixedWidths + minWidths[2]
+
+	if totalRequiredWidth > dm.width {
+		minWidths[2] = dm.width - fixedWidths
+		if minWidths[2] < 20 {
+			minWidths[2] = 20
+		}
 	}
+
 	columns := make([]table.Column, len(dm.columns))
 	for i, c := range dm.columns {
-		columns[i] = table.Column{Title: c.Title, Width: widths[i]}
+		columns[i] = table.Column{Title: c.FmtName(dm.sortState), Width: minWidths[i]}
 	}
 
 	dm.dirsTable.SetColumns(columns)
@@ -740,20 +922,7 @@ func (dm *DirModel) dirsSummary() string {
 		return ""
 	}
 
-	activeLang := "All"
-	var activeLangs []string
-	for _, lang := range dm.languages {
-		if dm.selectedLangs != nil && dm.selectedLangs[lang] {
-			activeLangs = append(activeLangs, lang)
-		}
-	}
-	if len(activeLangs) > 0 {
-		activeLang = strings.Join(activeLangs, ", ")
-	}
-	if len(activeLangs) == 0 && dm.langFilterIdx > -1 && dm.langFilterIdx < len(dm.languages) {
-		activeLang = dm.languages[dm.langFilterIdx]
-	}
-	currentStats := dm.nav.Entry().GetStats(activeLang)
+	currentStats := dm.comparableStats(dm.nav.Entry())
 
 	modeStr := "Nav"
 	if dm.treeMode {
@@ -766,7 +935,9 @@ func (dm *DirModel) dirsSummary() string {
 		NewBarItem("MODE", "#06ffa5", 0),
 		NewBarItem(modeStr, "", 0),
 		NewBarItem("LANG FILTER", "#3a86ff", 0),
-		NewBarItem(activeLang, "", 0),
+		NewBarItem(dm.statusLangLabel(), "", 0),
+		NewBarItem("SORT", "#06ffa5", 0),
+		NewBarItem(fmt.Sprintf("%s %s", dm.sortState.Key, dm.sortState.DirectionArrow()), "", 0),
 		NewBarItem("CODE", "#fb5607", 0),
 		DefaultBarItem(strconv.FormatInt(currentStats.Code, 10)),
 		NewBarItem("TOTAL", "#ffbe0b", 0),
