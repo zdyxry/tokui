@@ -3,11 +3,11 @@
 [![Build](https://github.com/zdyxry/tokui/actions/workflows/build.yml/badge.svg)](https://github.com/zdyxry/tokui/actions/workflows/build.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/zdyxry/tokui)](https://goreportcard.com/report/github.com/zdyxry/tokui)
 
-**Tokui** is a high-performance, cross-platform command-line tool for visualizing and exploring your code statistics. It integrates with the powerful code statistics engine [tokei](https://github.com/XAMPPRocky/tokei) to present code line count metrics through a responsive, keyboard-driven Terminal User Interface (TUI), helping you to quickly analyze code composition and understand your project's structure.
+**Tokui** is a high-performance, cross-platform command-line tool for visualizing and exploring code statistics. It integrates with the powerful code statistics engine [tokei](https://github.com/XAMPPRocky/tokei) to present code line count metrics through a responsive, keyboard-driven Terminal User Interface (TUI), helping you quickly analyze code composition and understand project structure.
 
 > **Project Origin**
 >
-> This project is a fork of the excellent disk space analyzer [noxdir](https://github.com/crumbyte/noxdir), and was heavily modified and refactored by a **Large Language Model (LLM)**, transforming its functionality from a disk analyzer into a code statistics visualizer.
+> This project is a fork of the excellent disk space analyzer [noxdir](https://github.com/crumbyte/noxdir), heavily modified and refactored by a **Large Language Model (LLM)** to transform it from a disk analyzer into a code statistics visualizer.
 
 ## 📸 Previews
 
@@ -15,109 +15,33 @@
 
 ## ✨ Features
 
-- **Interactive Terminal UI**: Navigate through your project's directory structure with ease using your keyboard.
-- **Deep Tokei Integration**: Leverages the powerful analysis capabilities of `tokei` for accurate code statistics.
-- **Detailed Data Analysis**: Displays lines of code, comments, blanks, and total lines, categorized by language.
+- **Interactive Terminal UI**: Navigate, filter, and explore your project with an intuitive keyboard-driven interface.
+- **Deep Tokei Integration**: Leverages `tokei` for accurate lines of code, comments, blanks, and total lines, categorized by language.
 - **File Preview**: Press `Enter` on any file to instantly preview its contents in a scrollable overlay window.
-- **Visual Charts**: Toggle a pie chart with `Ctrl+w` to intuitively visualize the proportion of each language.
-- **Dynamic Filtering and Searching**:
-  - Quickly search by file name (`/`).
-  - Filter statistics by a specific language (`Tab`), or select multiple languages for combined filtering (`Ctrl+L`).
-  - Flexible language selection overlay: Press `Ctrl+L` to open a multi-select menu for languages.
-- **Tree Mode**: Toggle between navigation mode (enter directories) and tree mode (expand/collapse directories inline) with `t`.
-- **Zero-Dependency Release**: Pre-built binaries bundle [tokei](https://github.com/XAMPPRocky/tokei) internally—no separate installation required.
-- **High-Performance & Lightweight**: Written in Go, it compiles to a single binary.
+- **Language Filtering**: Filter by a single language (`Tab`), or select multiple languages via the multi-select overlay (`Ctrl+L`).
+- **Visual Charts**: Toggle a language distribution pie chart with `Ctrl+w`.
+- **Column Sorting**: Sort the directory listing by any column (`s`) and toggle ascending/descending order (`S`).
+- **Tree Mode**: Toggle tree mode (`t`) to expand and collapse directories inline.
+- **Mouse Support**: Scroll, click, and double-click to navigate rows and overlays.
+- **Zero-Dependency Release**: Pre-built binaries bundle `tokei` internally—no separate installation required.
 - **Privacy-Focused**: Runs entirely locally. No telemetry or data uploads, ever.
-
-
-#### Main View
-A clean table showing code statistics for files and subdirectories in the current path.
-```
-┌─ 📊 Code Statistics ───────────────────────────────────────────────────────┐
-│  ICON  NAME                    LANGUAGES        CODE      TOTAL         %  │
-│  📂    internal                Go, ...          15,021    18,345    65.3%  │
-│  💻    main.go                 Go               850       1,010     3.6%   │
-│  📜    README.md               Markdown         120       150       0.5%   │
-│  ...                                                                       │
-└────────────────────────────────────────────────────────────────────────────┘
-```
-
-#### Language Selection Overlay (`Ctrl+L`)
-Quickly select one or more languages for combined filtering.
-Use `Space` to toggle selection, `Enter` to confirm, and `Esc` to cancel.
-
-```
-┌──────────── Select Languages ────────────────┐
-│ Space: toggle, Enter: confirm, Esc: cancel   │
-│ →  [x] Go                                    │
-│    [ ] Python                                │
-│    [x] Markdown                              │
-│ ...                                          │
-└──────────────────────────────────────────────┘
-```
-
-#### Language Distribution Chart (`Ctrl+w`)
-Visually represents the distribution of programming languages in the project.
-```
-┌───────────────────────────────────────────────┐
-│                  Language Distribution        │
-│    ███████                                    │
-│  ███████████     █ Go: 18,500 lines           │
-│  ███████████     █ YAML: 2,300 lines          │
-│    ███████       █ Markdown: 450 lines        │
-│      ███         ...                          │
-└───────────────────────────────────────────────┘
-```
-
-#### Tree Mode (`t`)
-Toggle tree mode to expand and collapse directories inline without navigating into them. Supports nested expansion.
-```
-┌─ 📊 Code Statistics ───────────────────────────────────────────────────────┐
-│  ICON  NAME                    LANGUAGES        CODE      TOTAL         %  │
-│  📂    src                     Go, ...          15,021    18,345    65.3%  │
-│  ▾     internal                Go, ...          8,200     10,100    35.7%  │
-│          📂 api                Go               4,000     5,000     17.6%  │
-│          💻 handler.go         Go               1,200     1,500      5.3%  │
-│          💻 service.go         Go               800       1,000      3.5%  │
-│  📄    main.go                 Go               850       1,010     3.6%   │
-│  ...                                                                       │
-└────────────────────────────────────────────────────────────────────────────┘
-```
-
-#### File Preview (`Enter` on files)
-Instantly preview file contents in a scrollable overlay window.
-```
-┌──────────────────── File Preview: main.go ─────────────────────────┐
-│                                                                    │
-│  package main                                                      │
-│                                                                    │
-│  import (                                                          │
-│      "fmt"                                                         │
-│      "os"                                                          │
-│  )                                                                 │
-│                                                                    │
-│  func main() {                                                     │
-│      fmt.Println("Hello, World!")                                  │
-│  }                                                                 │
-│                                                                    │
-│  Press 'q' to close, ↑/↓/j/k to scroll, PgUp/PgDn for page   15/23 │
-└────────────────────────────────────────────────────────────────────┘
-```
 
 ## ⚠️ Prerequisites
 
-**Pre-built release binaries have tokei embedded**—no manual installation is needed.
+**Pre-built release binaries have `tokei` embedded**—no manual installation is needed.
 
-If you are building from source or want to use your own tokei installation, ensure `tokei` is available in your `PATH`. Tokui will automatically prefer the system-installed version if present.
+If you are building from source or want to use your own `tokei` installation, ensure `tokei` is available in your `PATH`. Tokui will automatically prefer the system-installed version if present.
 
 - **Install `tokei`** (optional): [https://github.com/XAMPPRocky/tokei#installation](https://github.com/XAMPPRocky/tokei#installation)
 
 ## 📦 Installation
 
-#### Pre-compiled Binaries
-You can download the latest pre-compiled version from the [Releases](https://github.com/zdyxry/tokui/releases) page. Unzip the file and it's ready to use—no extra installation required.
+### Pre-compiled Binaries
 
-#### Build from Source (Go 1.24+ required)
+Download the latest release from the [Releases](https://github.com/zdyxry/tokui/releases) page. Unzip and run—no extra installation required.
+
+### Build from Source (Go 1.24+)
+
 ```bash
 # Clone the repository
 git clone https://github.com/zdyxry/tokui.git
@@ -133,14 +57,15 @@ make build
 ./bin/tokui
 ```
 
-> **Note**: `make fetch-tokei-binaries` downloads platform-specific tokei binaries that will be embedded into the final executable. If skipped, the build will still succeed using placeholder files; the resulting binary will fallback to a system-installed tokei at runtime.
+> **Note**: `make fetch-tokei-binaries` downloads platform-specific `tokei` binaries that will be embedded into the final executable. If skipped, the build will still succeed using placeholder files; the resulting binary will fallback to a system-installed `tokei` at runtime.
 
 ## 🛠️ Usage
 
 Tokui supports two modes of operation:
 
-#### 1. Direct Mode (Recommended)
-Tokui will automatically invoke the bundled (or system-installed) `tokei` to analyze the specified directory.
+### 1. Direct Mode (Recommended)
+
+Tokui automatically invokes the bundled (or system-installed) `tokei` to analyze the specified directory.
 
 ```bash
 # Analyze the current directory
@@ -150,8 +75,9 @@ tokui
 tokui /path/to/your/project
 ```
 
-#### 2. Pipe Mode
-If you have `tokei` installed separately, you can run it manually with custom arguments and pipe its JSON output to `tokui`. This is useful for advanced filtering (e.g., `--exclude`).
+### 2. Pipe Mode
+
+If you have `tokei` installed separately, run it manually with custom arguments and pipe its JSON output to `tokui`. This is useful for advanced filtering (e.g., `--exclude`).
 
 ```bash
 # Analyze the current directory
@@ -163,42 +89,40 @@ tokei -o json --exclude node_modules . | tokui
 
 ### CLI Arguments
 
-Tokui currently supports the following command-line flags:
-
 ```
 Usage:
   tokui [directory] [flags]
 
 Flags:
   -r, --root string   Specify the root directory to analyze. Defaults to the current directory ".".
-                      Example: tokui --root="/path/to/project"
-
   -t, --tree          Start in tree mode. Directories are expandable inline instead of navigable.
-                      Example: tokui --tree /path/to/project
-
   -h, --help          Show help information
 ```
 
 ## ⌨️ Keybindings
 
+### Main View
+
 | Key                 | Action                                                              |
 | ------------------- | ------------------------------------------------------------------- |
 | `↑` / `k`           | Move cursor up                                                      |
 | `↓` / `j`           | Move cursor down                                                    |
-| `Enter`             | Enter directory (Nav mode) / Expand-Collapse directory (Tree mode) / Preview file |
+| `g` / `home`        | Go to top                                                           |
+| `G` / `end`         | Go to bottom                                                        |
+| `Enter`             | Enter directory / Expand-Collapse directory / Preview file          |
 | `e`                 | Open file in editor                                                 |
 | `Backspace`         | Go back to the parent directory                                     |
-| `t`                 | Toggle between navigation mode and tree mode                        |
-| `Tab`               | Cycle through language filters (All, Go, Python, ...)               |
-| `Ctrl`+`L`          | Open multi-language selection overlay (multi-select language filter) |
-| `/`                 | Activate/input file name filter (press `Esc` to exit filter mode)   |
+| `t`                 | Toggle navigation mode / tree mode                                  |
+| `Tab`               | Cycle through language filters                                      |
+| `Ctrl`+`L`          | Open multi-language selection overlay                               |
+| `/`                 | Activate file name filter (press `Esc` to exit filter mode)         |
+| `s`                 | Cycle sort column (Name → Languages → Code → Comments → Blanks → Total → % of Parent) |
+| `S`                 | Toggle ascending / descending order for the current sort column     |
 | `Ctrl`+`w`          | Show/hide language distribution pie chart                           |
 | `?`                 | Show/hide full help                                                 |
 | `q` / `Ctrl`+`c`    | Quit the application / Close file preview                           |
 
 ### File Preview Mode
-
-When previewing a file, additional keyboard shortcuts are available:
 
 | Key                 | Action                                                              |
 | ------------------- | ------------------------------------------------------------------- |
@@ -208,17 +132,17 @@ When previewing a file, additional keyboard shortcuts are available:
 | `PgDn`              | Page down                                                           |
 | `q` / `Esc`         | Close file preview and return to directory view                     |
 
-## 🖱️ Mouse Support
+### Mouse Support
 
-Tokui also supports basic mouse interaction in any terminal that reports mouse events:
+Tokui also supports basic mouse interaction in terminals that report mouse events:
 
 | Action              | Effect                                                              |
 | ------------------- | ------------------------------------------------------------------- |
-| Scroll wheel        | Move the cursor up/down in the table, scroll previews and language lists |
-| Left click          | Select a row in the table or an item in the language selection overlay |
-| Double left click   | Enter a directory, expand/collapse a directory in tree mode, or open a file preview |
+| Scroll wheel        | Move cursor / scroll previews and language lists                    |
+| Left click          | Select a row or an item in the language selection overlay           |
+| Double left click   | Enter directory, expand/collapse directory, or open file preview    |
 | Double left click `..` | Go back to the parent directory                                    |
-| Click outside overlay | Close the file preview, language selection or chart overlay        |
+| Click outside overlay | Close the file preview, language selection, or chart overlay       |
 
 ## 🤝 Contributing
 
