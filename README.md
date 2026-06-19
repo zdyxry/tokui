@@ -208,6 +208,18 @@ When previewing a file, additional keyboard shortcuts are available:
 | `PgDn`              | Page down                                                           |
 | `q` / `Esc`         | Close file preview and return to directory view                     |
 
+## 🖱️ Mouse Support
+
+Tokui also supports basic mouse interaction in any terminal that reports mouse events:
+
+| Action              | Effect                                                              |
+| ------------------- | ------------------------------------------------------------------- |
+| Scroll wheel        | Move the cursor up/down in the table, scroll previews and language lists |
+| Left click          | Select a row in the table or an item in the language selection overlay |
+| Double left click   | Enter a directory, expand/collapse a directory in tree mode, or open a file preview |
+| Double left click `..` | Go back to the parent directory                                    |
+| Click outside overlay | Close the file preview, language selection or chart overlay        |
+
 ## 🤝 Contributing
 
 Pull Requests are welcome! If you'd like to add new features or report bugs, please open an issue first to discuss your ideas.

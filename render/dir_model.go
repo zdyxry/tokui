@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/zdyxry/tokui/filter"
 	"github.com/zdyxry/tokui/structure"
@@ -16,6 +17,7 @@ import (
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 )
 
 type Mode string
@@ -49,8 +51,9 @@ type ErrorMsg struct {
 }
 
 type tableEntry struct {
-	entry *structure.Entry
-	depth int
+	entry    *structure.Entry
+	depth    int
+	isParent bool
 }
 
 type DirModel struct {
@@ -75,7 +78,28 @@ type DirModel struct {
 	tableEntries  []*tableEntry
 	treeMode      bool
 	sortState     SortState
+
+	// Mouse support
+	overlayBounds overlayBounds
+	lastClick     mouseClick
+	lastTableView string // cached table view from the last render
 }
+
+type mouseClick struct {
+	time time.Time
+	y    int
+}
+
+// overlayBounds tracks the screen position of the currently rendered overlay.
+type overlayBounds struct {
+	kind      string // "preview", "chart" or "langselect"
+	x, y      int    // top-left corner
+	w, h      int    // width and height
+	langStart int    // first visible language index (for langselect)
+	langEnd   int    // last visible language index + 1 (for langselect)
+}
+
+const tableHeaderHeight = 2 // TableHeaderStyle has BorderBottom and no padding
 
 // NewDirModel creates and initializes a directory view model.
 func NewDirModel(nav *Navigation, tokeiVersion string, treeMode bool) *DirModel {
@@ -129,7 +153,16 @@ func (dm *DirModel) SelectedEntry() *structure.Entry {
 	if cursor < 0 || cursor >= len(dm.tableEntries) {
 		return nil
 	}
+	if dm.tableEntries[cursor].isParent {
+		return nil
+	}
 	return dm.tableEntries[cursor].entry
+}
+
+// IsParentSelected reports whether the synthetic ".." entry is selected.
+func (dm *DirModel) IsParentSelected() bool {
+	cursor := dm.dirsTable.Cursor()
+	return cursor >= 0 && cursor < len(dm.tableEntries) && dm.tableEntries[cursor].isParent
 }
 
 func (dm *DirModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -259,6 +292,17 @@ func (dm *DirModel) View() string {
 			lines = append(lines, lipgloss.NewStyle().Faint(true).Render("..."))
 		}
 		box := chartBoxStyle.Render(lipgloss.JoinVertical(lipgloss.Top, lines...))
+		boxW := lipgloss.Width(box)
+		boxH := lipgloss.Height(box)
+		dm.overlayBounds = overlayBounds{
+			kind:      "langselect",
+			x:         dm.width/2 - boxW/2,
+			y:         dm.height/2 - boxH/2,
+			w:         boxW,
+			h:         boxH,
+			langStart: start,
+			langEnd:   end,
+		}
 		bg := lipgloss.NewStyle().Width(dm.width).Height(dm.height).Render(" ")
 		return OverlayCenter(dm.width, dm.height, bg, box)
 	}
@@ -287,7 +331,8 @@ func (dm *DirModel) View() string {
 	}
 
 	dm.dirsTable.SetHeight(dirsTableHeight)
-	rows = append(rows, dm.dirsTable.View())
+	dm.lastTableView = dm.dirsTable.View()
+	rows = append(rows, dm.lastTableView)
 
 	slices.Reverse(rows)
 
@@ -296,12 +341,28 @@ func (dm *DirModel) View() string {
 	// If in preview mode, overlay the file preview
 	if dm.mode == PREVIEW && dm.filePreview != nil {
 		preview := dm.filePreview.View()
+		dm.overlayBounds = overlayBounds{
+			kind: "preview",
+			x:    dm.width/2 - dm.filePreview.width/2,
+			y:    dm.height/2 - dm.filePreview.height/2,
+			w:    dm.filePreview.width,
+			h:    dm.filePreview.height,
+		}
 		return OverlayCenter(dm.width, dm.height, bg, preview)
 	}
 
 	// If needed, overlay the chart display
 	if dm.showCart {
 		chart := dm.viewChart()
+		chartW := lipgloss.Width(chart)
+		chartH := lipgloss.Height(chart)
+		dm.overlayBounds = overlayBounds{
+			kind: "chart",
+			x:    dm.width/2 - chartW/2,
+			y:    dm.height/2 - chartH/2,
+			w:    chartW,
+			h:    chartH,
+		}
 		return OverlayCenter(dm.width, dm.height, bg, chart)
 	}
 
@@ -772,6 +833,18 @@ func (dm *DirModel) updateTableData(resetCursor ...bool) {
 			addEntry(child, 0)
 		}
 	} else {
+		// Add a synthetic ".." entry in navigation mode when not at the root.
+		if dm.nav.entryStack.len() > 0 {
+			parentEntry := &structure.Entry{Path: "..", IsDir: true}
+			dm.tableEntries = append(dm.tableEntries, &tableEntry{entry: parentEntry, isParent: true})
+			rows = append(rows, table.Row{
+				"⬆",
+				"",
+				"..",
+				"",
+				"0", "0", "0", "0", "",
+			})
+		}
 		for _, child := range dm.nav.Entry().Child {
 			if !dm.filters.Valid(child) {
 				continue
@@ -1004,6 +1077,12 @@ func (dm *DirModel) IsInPreviewMode() bool {
 	return dm.mode == PREVIEW
 }
 
+// ClosePreview closes the file preview and returns to the directory view.
+func (dm *DirModel) ClosePreview() {
+	dm.mode = READY
+	dm.filePreview = nil
+}
+
 func openFileWithEditor(filePath string) tea.Cmd {
 	editor := os.Getenv("EDITOR")
 	if editor == "" {
@@ -1015,4 +1094,183 @@ func openFileWithEditor(filePath string) tea.Cmd {
 	return tea.ExecProcess(cmd, func(err error) tea.Msg {
 		return EditorFinished{Err: err}
 	})
+}
+
+// --- Mouse support ---------------------------------------------------------
+
+const doubleClickThreshold = 300 * time.Millisecond
+
+func (dm *DirModel) isInsideOverlay(x, y int) bool {
+	b := dm.overlayBounds
+	return x >= b.x && x < b.x+b.w && y >= b.y && y < b.y+b.h
+}
+
+func (dm *DirModel) isInsidePreviewBox(x, y int) bool {
+	return dm.overlayBounds.kind == "preview" && dm.isInsideOverlay(x, y)
+}
+
+func (dm *DirModel) isInsideChartBox(x, y int) bool {
+	return dm.overlayBounds.kind == "chart" && dm.isInsideOverlay(x, y)
+}
+
+func (dm *DirModel) isInsideLangSelectBox(x, y int) bool {
+	return dm.overlayBounds.kind == "langselect" && dm.isInsideOverlay(x, y)
+}
+
+func (dm *DirModel) langSelectIndexAtY(y int) int {
+	b := dm.overlayBounds
+	if b.kind != "langselect" {
+		return -1
+	}
+	// Content starts one cell below the top border.
+	contentY := y - b.y - 1
+	if contentY < 2 {
+		return -1 // title or description line
+	}
+	listY := contentY - 2
+	if b.langStart > 0 {
+		if listY == 0 {
+			return -1 // "..." scroll indicator
+		}
+		listY--
+	}
+	idx := b.langStart + listY
+	if idx < b.langStart || idx >= b.langEnd || idx >= len(dm.languages) {
+		return -1
+	}
+	return idx
+}
+
+// tableRowAtY maps a terminal Y coordinate to a table row index.
+// It returns -1 when the coordinate is not over a data row.
+func (dm *DirModel) tableRowAtY(y int) int {
+	// Use the view from the last render; the user clicked what they saw.
+	view := dm.lastTableView
+	if view == "" {
+		view = dm.dirsTable.View()
+	}
+	lines := strings.Split(view, "\n")
+	if y < tableHeaderHeight || y >= len(lines) {
+		return -1
+	}
+	visibleIdx := y - tableHeaderHeight
+	if visibleIdx < 0 || visibleIdx >= len(lines)-tableHeaderHeight {
+		return -1
+	}
+
+	cursor := dm.dirsTable.Cursor()
+	cursorLine := dm.findCursorLineInView(view)
+	if cursorLine < 0 {
+		return -1
+	}
+
+	row := cursor + (visibleIdx - cursorLine)
+	if row < 0 || row >= len(dm.tableEntries) {
+		return -1
+	}
+	return row
+}
+
+// findCursorLineInView finds the visible line index (0-based, excluding header)
+// that corresponds to the currently selected row by comparing exactly rendered rows.
+func (dm *DirModel) findCursorLineInView(view string) int {
+	lines := strings.Split(view, "\n")
+	if len(lines) <= tableHeaderHeight {
+		return -1
+	}
+	selectedRow := dm.dirsTable.SelectedRow()
+	if selectedRow == nil {
+		return -1
+	}
+	renderedSelected := strings.TrimRight(dm.renderTableRow(selectedRow, true), " ")
+	for i := tableHeaderHeight; i < len(lines); i++ {
+		if strings.TrimRight(lines[i], " ") == renderedSelected {
+			return i - tableHeaderHeight
+		}
+	}
+	return -1
+}
+
+// renderTableRow replicates the rendering logic of bubbles/table's renderRow so
+// that we can match a data row to its exact rendered line.
+func (dm *DirModel) renderTableRow(row table.Row, selected bool) string {
+	cols := dm.dirsTable.Columns()
+	var cells []string
+	for i, value := range row {
+		if i >= len(cols) || cols[i].Width <= 0 {
+			continue
+		}
+		style := lipgloss.NewStyle().Width(cols[i].Width).MaxWidth(cols[i].Width).Inline(true)
+		renderedCell := style.Render(runewidth.Truncate(value, cols[i].Width, "…"))
+		cells = append(cells, renderedCell)
+	}
+	line := lipgloss.JoinHorizontal(lipgloss.Left, cells...)
+	if selected {
+		line = SelectedRowStyle.Render(line)
+	}
+	return line
+}
+
+// handleTableMouse handles mouse events for the main directory table.
+// It returns the selected row, the click count (2 for a double-click) and
+// whether the event was consumed.
+func (dm *DirModel) handleTableMouse(msg tea.MouseMsg) (int, int, bool) {
+	switch msg.Button {
+	case tea.MouseButtonWheelUp:
+		dm.dirsTable.MoveUp(1)
+		return -1, 0, true
+	case tea.MouseButtonWheelDown:
+		dm.dirsTable.MoveDown(1)
+		return -1, 0, true
+	case tea.MouseButtonLeft:
+		if msg.Action != tea.MouseActionPress {
+			return -1, 0, false
+		}
+		row := dm.tableRowAtY(msg.Y)
+		if row < 0 {
+			return -1, 0, false
+		}
+		now := time.Now()
+		clickCount := 1
+		if !dm.lastClick.time.IsZero() && now.Sub(dm.lastClick.time) < doubleClickThreshold && dm.lastClick.y == msg.Y {
+			clickCount = 2
+		}
+		dm.lastClick = mouseClick{time: now, y: msg.Y}
+		dm.dirsTable.SetCursor(row)
+		return row, clickCount, true
+	}
+	return -1, 0, false
+}
+
+// handleLangSelectMouse handles mouse events for the language selection overlay.
+func (dm *DirModel) handleLangSelectMouse(msg tea.MouseMsg) (tea.Cmd, bool) {
+	switch msg.Button {
+	case tea.MouseButtonWheelUp:
+		if dm.selectIndex > 0 {
+			dm.selectIndex--
+		}
+		return nil, true
+	case tea.MouseButtonWheelDown:
+		if dm.selectIndex < len(dm.languages)-1 {
+			dm.selectIndex++
+		}
+		return nil, true
+	case tea.MouseButtonLeft:
+		if msg.Action != tea.MouseActionPress {
+			return nil, false
+		}
+		if !dm.isInsideLangSelectBox(msg.X, msg.Y) {
+			dm.mode = READY
+			dm.selectMode = false
+			return nil, true
+		}
+		idx := dm.langSelectIndexAtY(msg.Y)
+		if idx >= 0 && idx < len(dm.languages) {
+			dm.selectIndex = idx
+			lang := dm.languages[idx]
+			dm.selectedLangs[lang] = !dm.selectedLangs[lang]
+		}
+		return nil, true
+	}
+	return nil, false
 }

@@ -41,13 +41,13 @@ func NewFilePreview(filePath string, width, height int) *FilePreview {
 	fp := &FilePreview{
 		filePath: filePath,
 		fileName: filepath.Base(filePath),
-		width:    previewWidth,   // Use preview width instead of terminal width
-		height:   previewHeight,  // Use preview height instead of terminal height
+		width:    previewWidth,  // Use preview width instead of terminal width
+		height:   previewHeight, // Use preview height instead of terminal height
 	}
 
 	// Initialize viewport - leave space for borders, title, footer and padding
-	viewportWidth := previewWidth - 10   // Leave space for box borders and padding
-	viewportHeight := previewHeight - 8  // Leave space for title, footer and padding
+	viewportWidth := previewWidth - 10  // Leave space for box borders and padding
+	viewportHeight := previewHeight - 8 // Leave space for title, footer and padding
 	fp.viewport = viewport.New(viewportWidth, viewportHeight)
 
 	// Load file content
@@ -169,6 +169,9 @@ func (fp *FilePreview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		// Handle viewport navigation keys
+		fp.viewport, cmd = fp.viewport.Update(msg)
+	case tea.MouseMsg:
+		// Forward mouse events (e.g. scroll wheel) to the viewport.
 		fp.viewport, cmd = fp.viewport.Update(msg)
 	}
 

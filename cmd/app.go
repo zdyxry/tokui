@@ -137,6 +137,7 @@ func runApp(_ *cobra.Command, args []string) error {
 	teaProg := tea.NewProgram(
 		vm,
 		tea.WithAltScreen(),
+		tea.WithMouseCellMotion(),
 		tea.WithoutCatchPanics(),
 	)
 
