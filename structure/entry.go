@@ -93,11 +93,17 @@ func (e *Entry) HasChild() bool {
 	return len(e.Child) != 0
 }
 
+type ChildSortFunc func(a, b *Entry) int
+
+func (e *Entry) SortChildBy(fn ChildSortFunc) *Entry {
+	slices.SortFunc(e.Child, fn)
+	return e
+}
+
 func (e *Entry) SortChild() *Entry {
-	slices.SortFunc(e.Child, func(a, b *Entry) int {
+	return e.SortChildBy(func(a, b *Entry) int {
 		return cmp.Compare(b.TotalStats.Total(), a.TotalStats.Total())
 	})
-	return e
 }
 
 func (e *Entry) GetStats(langFilter string) CodeStats {

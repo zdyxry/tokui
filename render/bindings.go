@@ -23,6 +23,8 @@ const (
 	toggleLangSelect bindingKey = "ctrl+l"
 	toggleHelp       bindingKey = "?"
 	toggleTree       bindingKey = "t"
+	cycleSortColumn  bindingKey = "s"
+	toggleSortOrder  bindingKey = "S"
 	left             bindingKey = "left"
 	right            bindingKey = "right"
 )
@@ -135,6 +137,22 @@ var dirsKeyMap = [][]key.Binding{
 			key.WithHelp(
 				bindKeyStyle.Render(toggleChart.String()),
 				helpDescStyle.Render(" - Language proportion chart"),
+			),
+		),
+	},
+	{
+		key.NewBinding(
+			key.WithKeys(cycleSortColumn.String()),
+			key.WithHelp(
+				bindKeyStyle.Render(cycleSortColumn.String()),
+				helpDescStyle.Render(" - Cycle sort column"),
+			),
+		),
+		key.NewBinding(
+			key.WithKeys(toggleSortOrder.String()),
+			key.WithHelp(
+				bindKeyStyle.Render(toggleSortOrder.String()),
+				helpDescStyle.Render(" - Toggle sort order"),
 			),
 		),
 	},
