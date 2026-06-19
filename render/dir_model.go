@@ -551,6 +551,22 @@ func (dm *DirModel) buildChildComparator() func(a, b *structure.Entry) int {
 	key := dm.sortState.Key
 	desc := dm.sortState.Desc
 
+	// Precompute filter state once to avoid repeated allocations during sorting.
+	useMulti := dm.useMultiLangFilter()
+	activeLang := dm.activeLang()
+	selectedLangs := dm.selectedLangsList()
+
+	getComparableStats := func(e *structure.Entry) structure.CodeStats {
+		if !useMulti {
+			return e.GetStats(activeLang)
+		}
+		var sum structure.CodeStats
+		for _, lang := range selectedLangs {
+			sum.Add(e.GetStats(lang))
+		}
+		return sum
+	}
+
 	cmpVal := func(a, b int64) int {
 		if desc {
 			return cmp.Compare(b, a)
@@ -573,31 +589,20 @@ func (dm *DirModel) buildChildComparator() func(a, b *structure.Entry) int {
 			return cmpStr(strings.Join(a.Languages(), ", "), strings.Join(b.Languages(), ", "))
 		}
 	case SortByCode:
-		return func(a, b *structure.Entry) int { return cmpVal(dm.comparableStats(a).Code, dm.comparableStats(b).Code) }
+		return func(a, b *structure.Entry) int { return cmpVal(getComparableStats(a).Code, getComparableStats(b).Code) }
 	case SortByComments:
 		return func(a, b *structure.Entry) int {
-			return cmpVal(dm.comparableStats(a).Comments, dm.comparableStats(b).Comments)
+			return cmpVal(getComparableStats(a).Comments, getComparableStats(b).Comments)
 		}
 	case SortByBlanks:
 		return func(a, b *structure.Entry) int {
-			return cmpVal(dm.comparableStats(a).Blanks, dm.comparableStats(b).Blanks)
+			return cmpVal(getComparableStats(a).Blanks, getComparableStats(b).Blanks)
 		}
-	case SortByTotal:
+	case SortByTotal, SortByPercent:
+		// SortByPercent is mathematically equivalent to SortByTotal because the
+		// parent total is constant for all siblings being compared.
 		return func(a, b *structure.Entry) int {
-			return cmpVal(dm.comparableStats(a).Total(), dm.comparableStats(b).Total())
-		}
-	case SortByPercent:
-		parentTotal := dm.nav.ParentTotalLines(dm.activeLang())
-		return func(a, b *structure.Entry) int {
-			var pa, pb float64
-			if parentTotal > 0 {
-				pa = float64(dm.comparableStats(a).Total()) / float64(parentTotal)
-				pb = float64(dm.comparableStats(b).Total()) / float64(parentTotal)
-			}
-			if desc {
-				return cmp.Compare(pb, pa)
-			}
-			return cmp.Compare(pa, pb)
+			return cmpVal(getComparableStats(a).Total(), getComparableStats(b).Total())
 		}
 	default:
 		return func(a, b *structure.Entry) int { return cmpVal(a.TotalStats.Total(), b.TotalStats.Total()) }
