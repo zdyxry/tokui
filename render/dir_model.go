@@ -87,7 +87,7 @@ type DirModel struct {
 
 type mouseClick struct {
 	time time.Time
-	y    int
+	row  int
 }
 
 // overlayBounds tracks the screen position of the currently rendered overlay.
@@ -1232,10 +1232,10 @@ func (dm *DirModel) handleTableMouse(msg tea.MouseMsg) (int, int, bool) {
 		}
 		now := time.Now()
 		clickCount := 1
-		if !dm.lastClick.time.IsZero() && now.Sub(dm.lastClick.time) < doubleClickThreshold && dm.lastClick.y == msg.Y {
+		if !dm.lastClick.time.IsZero() && now.Sub(dm.lastClick.time) < doubleClickThreshold && dm.lastClick.row == row {
 			clickCount = 2
 		}
-		dm.lastClick = mouseClick{time: now, y: msg.Y}
+		dm.lastClick = mouseClick{time: now, row: row}
 		dm.dirsTable.SetCursor(row)
 		return row, clickCount, true
 	}
@@ -1262,6 +1262,7 @@ func (dm *DirModel) handleLangSelectMouse(msg tea.MouseMsg) (tea.Cmd, bool) {
 		if !dm.isInsideLangSelectBox(msg.X, msg.Y) {
 			dm.mode = READY
 			dm.selectMode = false
+			dm.updateTableData()
 			return nil, true
 		}
 		idx := dm.langSelectIndexAtY(msg.Y)
