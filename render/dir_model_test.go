@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/zdyxry/tokui/filter"
 	"github.com/zdyxry/tokui/structure"
 )
 
@@ -225,5 +226,25 @@ func TestViewModelPreviewQClosesPreviewWithoutQuitting(t *testing.T) {
 	}
 	if dm.filePreview != nil {
 		t.Fatalf("expected q to close preview")
+	}
+}
+
+func TestViewModelInputQFiltersWithoutQuitting(t *testing.T) {
+	testDM := newTestDirModel()
+	dm := NewDirModel(NewCodeNavigation(structure.NewTree(testDM.nav.Entry())), "", false, false)
+	dm.mode = INPUT
+	dm.filters.ToggleFilter(filter.NameFilterID)
+	vm := NewViewModel(nil, dm)
+
+	_, cmd := vm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+
+	if cmd != nil {
+		t.Fatalf("expected q in input mode not to quit")
+	}
+	if dm.mode != INPUT {
+		t.Fatalf("expected q to keep input mode, got %v", dm.mode)
+	}
+	if got := len(dm.dirsTable.Rows()); got != 0 {
+		t.Fatalf("expected q to be applied to the name filter, got %d rows", got)
 	}
 }
