@@ -109,6 +109,11 @@ const tableHeaderHeight = 2 // TableHeaderStyle has BorderBottom and no padding
 
 // NewDirModel creates and initializes a directory view model.
 func NewDirModel(nav *Navigation, tokeiVersion string, treeMode, treemapMode bool) *DirModel {
+	// Treemap and tree mode are mutually exclusive at the view level.
+	if treemapMode {
+		treeMode = false
+	}
+
 	// Define new column headers for the table
 	columns := []Column{
 		{Title: ""},                          // Icon
