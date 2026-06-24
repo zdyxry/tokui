@@ -71,6 +71,7 @@ func init() {
 		false,
 		`Start in treemap mode (proportional blocks instead of a table).`,
 	)
+	appCmd.MarkFlagsMutuallyExclusive("tree", "treemap")
 }
 
 func Execute() {
