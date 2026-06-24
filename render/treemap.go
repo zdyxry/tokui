@@ -254,8 +254,16 @@ func layoutRow(items []treemapItem, result []treemapRect, start, end int, total 
 }
 
 func fillRect(grid [][]treemapCell, r treemapRect, color lipgloss.Color) {
-	for y := r.y; y < r.y+r.h && y < len(grid); y++ {
-		for x := r.x; x < r.x+r.w && x < len(grid[y]); x++ {
+	startY := r.y
+	if startY < 0 {
+		startY = 0
+	}
+	startX := r.x
+	if startX < 0 {
+		startX = 0
+	}
+	for y := startY; y < r.y+r.h && y < len(grid); y++ {
+		for x := startX; x < r.x+r.w && x < len(grid[y]); x++ {
 			grid[y][x].bg = color
 		}
 	}
