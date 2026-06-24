@@ -72,6 +72,8 @@ func (vm *ViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					vm.levelUp()
 				} else if vm.dirModel.treeMode {
 					vm.toggleExpand()
+				} else if vm.dirModel.treemapMode {
+					vm.treemapDrillDown()
 				} else {
 					vm.levelDown()
 				}
@@ -117,6 +119,14 @@ func (vm *ViewModel) handleMouseMsg(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && !vm.dirModel.isInsideChartBox(msg.X, msg.Y) {
 			vm.dirModel.showCart = false
 			return vm, nil
+		}
+		return vm, nil
+	}
+
+	if vm.dirModel.treemapMode {
+		idx, clickCount, handled := vm.dirModel.handleTreemapMouse(msg)
+		if handled && clickCount >= 2 && idx >= 0 {
+			vm.treemapDrillDown()
 		}
 		return vm, nil
 	}
@@ -173,9 +183,24 @@ func (vm *ViewModel) toggleExpand() {
 	vm.dirModel.Update(ScanFinished{})
 }
 
+func (vm *ViewModel) treemapDrillDown() {
+	entry := vm.dirModel.SelectedEntry()
+	if entry == nil {
+		return
+	}
+	if entry.IsDir {
+		vm.nav.Down(entry.Name(), vm.dirModel.treemapSelected, 0)
+		vm.dirModel.treemapSelected = 0
+		vm.dirModel.Update(ScanFinished{ResetCursor: true})
+	} else {
+		vm.dirModel.ShowFilePreview(entry.Path)
+	}
+}
+
 func (vm *ViewModel) levelUp() {
 	if vm.nav.entryStack.len() > 0 {
 		vm.nav.Up()
+		vm.dirModel.treemapSelected = 0
 		vm.dirModel.Update(ScanFinished{ResetCursor: true})
 	}
 }

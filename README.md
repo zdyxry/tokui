@@ -22,6 +22,7 @@
 - **Visual Charts**: Toggle a language distribution pie chart with `Ctrl+w`.
 - **Column Sorting**: Sort the directory listing by any column (`s`) and toggle ascending/descending order (`S`).
 - **Tree Mode**: Toggle tree mode (`t`) to expand and collapse directories inline.
+- **Treemap Mode**: Toggle treemap mode (`m`) to visualize directory composition with proportional colored blocks.
 - **Mouse Support**: Scroll, click, and double-click to navigate rows and overlays.
 - **Zero-Dependency Release**: Pre-built binaries bundle `tokei` internally—no separate installation required.
 - **Privacy-Focused**: Runs entirely locally. No telemetry or data uploads, ever.
@@ -96,6 +97,7 @@ Usage:
 Flags:
   -r, --root string   Specify the root directory to analyze. Defaults to the current directory ".".
   -t, --tree          Start in tree mode. Directories are expandable inline instead of navigable.
+      --treemap       Start in treemap mode. Show proportional blocks instead of a table.
   -h, --help          Show help information
 ```
 
@@ -113,6 +115,7 @@ Flags:
 | `e`                 | Open file in editor                                                 |
 | `Backspace`         | Go back to the parent directory                                     |
 | `t`                 | Toggle navigation mode / tree mode                                  |
+| `m`                 | Toggle treemap mode                                                 |
 | `Tab`               | Cycle through language filters                                      |
 | `Ctrl`+`L`          | Open multi-language selection overlay                               |
 | `/`                 | Activate file name filter (press `Esc` to exit filter mode)         |

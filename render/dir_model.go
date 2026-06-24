@@ -77,7 +77,13 @@ type DirModel struct {
 	tokeiVersion  string
 	tableEntries  []*tableEntry
 	treeMode      bool
+	treemapMode   bool
 	sortState     SortState
+
+	// Treemap view state
+	treemapBlocks   []treemapBlock
+	treemapSelected int
+	treemapOffsetY  int // screen Y where the treemap canvas starts
 
 	// Mouse support
 	overlayBounds overlayBounds
@@ -102,7 +108,7 @@ type overlayBounds struct {
 const tableHeaderHeight = 2 // TableHeaderStyle has BorderBottom and no padding
 
 // NewDirModel creates and initializes a directory view model.
-func NewDirModel(nav *Navigation, tokeiVersion string, treeMode bool) *DirModel {
+func NewDirModel(nav *Navigation, tokeiVersion string, treeMode, treemapMode bool) *DirModel {
 	// Define new column headers for the table
 	columns := []Column{
 		{Title: ""},                          // Icon
@@ -133,6 +139,7 @@ func NewDirModel(nav *Navigation, tokeiVersion string, treeMode bool) *DirModel 
 		selectIndex:   0,
 		tokeiVersion:  tokeiVersion,
 		treeMode:      treeMode,
+		treemapMode:   treemapMode,
 		sortState:     SortState{Key: SortByTotal, Desc: true},
 	}
 
@@ -144,11 +151,28 @@ func (dm *DirModel) ToggleTreeMode() {
 	dm.updateTableData()
 }
 
+func (dm *DirModel) ToggleTreemapMode() {
+	dm.treemapMode = !dm.treemapMode
+	if dm.treemapMode {
+		// Treemap and tree mode are mutually exclusive at the view level.
+		dm.treeMode = false
+	}
+	dm.treemapSelected = 0
+	dm.updateTableData()
+}
+
 func (dm *DirModel) Init() tea.Cmd {
 	return nil
 }
 
 func (dm *DirModel) SelectedEntry() *structure.Entry {
+	if dm.treemapMode {
+		if dm.treemapSelected < 0 || dm.treemapSelected >= len(dm.treemapBlocks) {
+			return nil
+		}
+		return dm.treemapBlocks[dm.treemapSelected].entry
+	}
+
 	cursor := dm.dirsTable.Cursor()
 	if cursor < 0 || cursor >= len(dm.tableEntries) {
 		return nil
@@ -160,7 +184,11 @@ func (dm *DirModel) SelectedEntry() *structure.Entry {
 }
 
 // IsParentSelected reports whether the synthetic ".." entry is selected.
+// It always returns false in treemap mode because there is no parent row.
 func (dm *DirModel) IsParentSelected() bool {
+	if dm.treemapMode {
+		return false
+	}
 	cursor := dm.dirsTable.Cursor()
 	return cursor >= 0 && cursor < len(dm.tableEntries) && dm.tableEntries[cursor].isParent
 }
@@ -330,9 +358,19 @@ func (dm *DirModel) View() string {
 		}
 	}
 
-	dm.dirsTable.SetHeight(dirsTableHeight)
-	dm.lastTableView = dm.dirsTable.View()
-	rows = append(rows, dm.lastTableView)
+	// The main content is rendered at the top of the screen (rows are reversed
+	// before joining), so the treemap canvas starts at y=0.
+	dm.treemapOffsetY = 0
+
+	var mainView string
+	if dm.treemapMode {
+		mainView = dm.viewTreemap(dirsTableHeight)
+	} else {
+		dm.dirsTable.SetHeight(dirsTableHeight)
+		dm.lastTableView = dm.dirsTable.View()
+		mainView = dm.lastTableView
+	}
+	rows = append(rows, mainView)
 
 	slices.Reverse(rows)
 
@@ -457,6 +495,31 @@ func (dm *DirModel) handleKeyBindings(msg tea.KeyMsg) (tea.Cmd, bool) {
 		return nil, true
 	}
 
+	// Treemap-specific navigation and toggling.
+	if dm.treemapMode {
+		switch bk {
+		case "up", "k":
+			if dm.treemapSelected > 0 {
+				dm.treemapSelected--
+			}
+			return nil, true
+		case "down", "j":
+			if dm.treemapSelected < len(dm.treemapBlocks)-1 {
+				dm.treemapSelected++
+			}
+			return nil, true
+		case toggleTree:
+			// Switch from treemap view back to tree table view.
+			dm.treemapMode = false
+			dm.treeMode = true
+			dm.updateTableData()
+			return nil, true
+		case toggleTreemap:
+			dm.ToggleTreemapMode()
+			return nil, true
+		}
+	}
+
 	// Handle other shortcuts
 	switch bk {
 	case editFile:
@@ -485,6 +548,9 @@ func (dm *DirModel) handleKeyBindings(msg tea.KeyMsg) (tea.Cmd, bool) {
 		return nil, true
 	case toggleTree:
 		dm.ToggleTreeMode()
+		return nil, true
+	case toggleTreemap:
+		dm.ToggleTreemapMode()
 		return nil, true
 	case cycleSortColumn:
 		dm.cycleSortColumn()
@@ -1001,6 +1067,9 @@ func (dm *DirModel) dirsSummary() string {
 	if dm.treeMode {
 		modeStr = "Tree"
 	}
+	if dm.treemapMode {
+		modeStr = "Treemap"
+	}
 
 	codeStr := formatNumber(currentStats.Code)
 	totalStr := formatNumber(currentStats.Total())
@@ -1045,6 +1114,74 @@ func (dm *DirModel) dirsSummary() string {
 	)
 
 	return statusBarStyle.Margin(1, 0, 0, 0).Render(NewStatusBar(items, dm.width))
+}
+
+// filteredChildren returns the current directory's children after applying
+// active filters and sorting. It is used by both the table view and the
+// treemap view.
+func (dm *DirModel) filteredChildren() []*structure.Entry {
+	if dm.nav.Entry() == nil || !dm.nav.Entry().IsDir {
+		return nil
+	}
+
+	children := dm.nav.Entry().Child
+	result := make([]*structure.Entry, 0, len(children))
+	for _, child := range children {
+		if !dm.filters.Valid(child) {
+			continue
+		}
+		if dm.useMultiLangFilter() {
+			activeLangs := dm.selectedLangsList()
+			has := false
+			for _, lang := range activeLangs {
+				if s := child.GetStats(lang); s.Total() > 0 {
+					has = true
+					break
+				}
+			}
+			if !has {
+				continue
+			}
+			stats := dm.comparableStats(child)
+			if stats.Total() == 0 {
+				continue
+			}
+		} else {
+			stats := dm.comparableStats(child)
+			if dm.activeLang() != "" && stats.Total() == 0 {
+				continue
+			}
+		}
+		result = append(result, child)
+	}
+
+	if len(result) > 1 {
+		cmpFn := dm.buildChildComparator()
+		slices.SortFunc(result, cmpFn)
+	}
+
+	return result
+}
+
+func (dm *DirModel) viewTreemap(availableHeight int) string {
+	children := dm.filteredChildren()
+	if len(children) == 0 {
+		return treemapEmptyStyle.Render(" (no items to display)")
+	}
+
+	w := dm.width
+	h := availableHeight
+	if h < 3 {
+		h = 3
+	}
+
+	getSize := func(e *structure.Entry) int64 {
+		return dm.comparableStats(e).Total()
+	}
+
+	view, blocks := Treemap(w, h, children, getSize, dm.treemapSelected)
+	dm.treemapBlocks = blocks
+	return view
 }
 
 func (dm *DirModel) viewChart() string {
@@ -1237,6 +1374,43 @@ func (dm *DirModel) renderTableRow(row table.Row, selected bool) string {
 		line = SelectedRowStyle.Render(line)
 	}
 	return line
+}
+
+// handleTreemapMouse handles mouse events for the treemap view.
+// It returns the selected block index, the click count, and whether the event
+// was consumed.
+func (dm *DirModel) handleTreemapMouse(msg tea.MouseMsg) (int, int, bool) {
+	switch msg.Button {
+	case tea.MouseButtonWheelUp:
+		if dm.treemapSelected > 0 {
+			dm.treemapSelected--
+		}
+		return dm.treemapSelected, 0, true
+	case tea.MouseButtonWheelDown:
+		if dm.treemapSelected < len(dm.treemapBlocks)-1 {
+			dm.treemapSelected++
+		}
+		return dm.treemapSelected, 0, true
+	case tea.MouseButtonLeft:
+		if msg.Action != tea.MouseActionPress {
+			return -1, 0, false
+		}
+		relX := msg.X
+		relY := msg.Y - dm.treemapOffsetY
+		idx := treemapBlockAt(dm.treemapBlocks, relX, relY)
+		if idx < 0 {
+			return -1, 0, false
+		}
+		now := time.Now()
+		clickCount := 1
+		if !dm.lastClick.time.IsZero() && now.Sub(dm.lastClick.time) < doubleClickThreshold && dm.lastClick.row == idx {
+			clickCount = 2
+		}
+		dm.lastClick = mouseClick{time: now, row: idx}
+		dm.treemapSelected = idx
+		return idx, clickCount, true
+	}
+	return -1, 0, false
 }
 
 // handleTableMouse handles mouse events for the main directory table.
