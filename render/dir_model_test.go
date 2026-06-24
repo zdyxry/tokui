@@ -3,6 +3,7 @@ package render
 import (
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/zdyxry/tokui/structure"
 )
 
@@ -205,5 +206,24 @@ func TestDirModelToggleSortOrder(t *testing.T) {
 	}
 	if dm.sortState.Key != SortByTotal {
 		t.Errorf("expected key to remain %q", SortByTotal)
+	}
+}
+
+func TestViewModelPreviewQClosesPreviewWithoutQuitting(t *testing.T) {
+	dm := newTestDirModel()
+	dm.mode = PREVIEW
+	dm.filePreview = &FilePreview{}
+	vm := NewViewModel(nil, dm)
+
+	_, cmd := vm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+
+	if cmd != nil {
+		t.Fatalf("expected q in preview mode not to quit")
+	}
+	if dm.mode != READY {
+		t.Fatalf("expected q to return to ready mode, got %v", dm.mode)
+	}
+	if dm.filePreview != nil {
+		t.Fatalf("expected q to close preview")
 	}
 }
