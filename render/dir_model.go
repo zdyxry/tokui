@@ -1171,6 +1171,8 @@ func (dm *DirModel) filteredChildren() []*structure.Entry {
 func (dm *DirModel) viewTreemap(availableHeight int) string {
 	children := dm.filteredChildren()
 	if len(children) == 0 {
+		dm.treemapBlocks = nil
+		dm.treemapSelected = 0
 		return treemapEmptyStyle.Render(" (no items to display)")
 	}
 
@@ -1186,6 +1188,10 @@ func (dm *DirModel) viewTreemap(availableHeight int) string {
 
 	view, blocks := Treemap(w, h, children, getSize, dm.treemapSelected)
 	dm.treemapBlocks = blocks
+	if len(blocks) > 0 && dm.treemapSelected >= len(blocks) {
+		dm.treemapSelected = len(blocks) - 1
+		view, _ = Treemap(w, h, children, getSize, dm.treemapSelected)
+	}
 	return view
 }
 
