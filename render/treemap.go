@@ -331,7 +331,7 @@ func placeLabel(grid [][]treemapCell, r treemapRect, label string, selected bool
 	// Center vertically (single line for now).
 	y := r.y + 1
 	x := r.x + 1
-	if y >= len(grid) {
+	if y < 0 || y >= len(grid) || x < 0 {
 		return
 	}
 
