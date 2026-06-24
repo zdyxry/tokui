@@ -17,9 +17,10 @@ import (
 )
 
 var (
-	ErrUnknown = errors.New("unknown error")
-	root       string
-	treeMode   bool
+	ErrUnknown  = errors.New("unknown error")
+	root        string
+	treeMode    bool
+	treemapMode bool
 
 	appCmd = &cobra.Command{
 		Use:   "tokui [directory]",
@@ -64,6 +65,13 @@ func init() {
 		false,
 		`Start in tree mode (expandable directories instead of navigation).`,
 	)
+	appCmd.PersistentFlags().BoolVar(
+		&treemapMode,
+		"treemap",
+		false,
+		`Start in treemap mode (proportional blocks instead of a table).`,
+	)
+	appCmd.MarkFlagsMutuallyExclusive("tree", "treemap")
 }
 
 func Execute() {
@@ -128,7 +136,7 @@ func runApp(_ *cobra.Command, args []string) error {
 	}
 
 	// Initialize view model
-	vm, err := initViewModel(tree, treeMode)
+	vm, err := initViewModel(tree, treeMode, treemapMode)
 	if err != nil {
 		return err
 	}
@@ -148,13 +156,13 @@ func runApp(_ *cobra.Command, args []string) error {
 	return nil
 }
 
-func initViewModel(tree *structure.Tree, treeMode bool) (*render.ViewModel, error) {
+func initViewModel(tree *structure.Tree, treeMode, treemapMode bool) (*render.ViewModel, error) {
 	nav := render.NewCodeNavigation(tree)
 	tokeiVersion, _ := tokei.GetVersion()
 	if tokeiVersion == "" {
 		tokeiVersion = "unknown"
 	}
-	dirModel := render.NewDirModel(nav, tokeiVersion, treeMode)
+	dirModel := render.NewDirModel(nav, tokeiVersion, treeMode, treemapMode)
 	vm := render.NewViewModel(
 		nav,
 		dirModel,

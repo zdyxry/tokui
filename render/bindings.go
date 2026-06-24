@@ -23,6 +23,7 @@ const (
 	toggleLangSelect bindingKey = "ctrl+l"
 	toggleHelp       bindingKey = "?"
 	toggleTree       bindingKey = "t"
+	toggleTreemap    bindingKey = "m"
 	cycleSortColumn  bindingKey = "s"
 	toggleSortOrder  bindingKey = "S"
 	left             bindingKey = "left"
@@ -100,6 +101,13 @@ var dirsKeyMap = [][]key.Binding{
 			key.WithHelp(
 				bindKeyStyle.Render(toggleTree.String()),
 				helpDescStyle.Render(" - Toggle tree mode"),
+			),
+		),
+		key.NewBinding(
+			key.WithKeys(toggleTreemap.String()),
+			key.WithHelp(
+				bindKeyStyle.Render(toggleTreemap.String()),
+				helpDescStyle.Render(" - Toggle treemap"),
 			),
 		),
 		key.NewBinding(
