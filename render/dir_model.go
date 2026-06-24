@@ -1001,21 +1001,49 @@ func (dm *DirModel) dirsSummary() string {
 	if dm.treeMode {
 		modeStr = "Tree"
 	}
-	items := []*BarItem{
-		NewBarItem(dm.tokeiVersion, "#8338ec", 0),
+
+	codeStr := formatNumber(currentStats.Code)
+	totalStr := formatNumber(currentStats.Total())
+	if currentStats.Total() > 0 {
+		codeStr = fmt.Sprintf("%s (%d%%)", codeStr, currentStats.Code*100/currentStats.Total())
+	}
+
+	// Build the status bar from most to least important. Lower-priority items
+	// are hidden on narrow terminals so the path and core metrics remain readable.
+	const (
+		showVersionMinWidth = 110
+		showSortMinWidth    = 130
+	)
+
+	items := make([]*BarItem, 0, 12)
+
+	if dm.width >= showVersionMinWidth {
+		items = append(items, NewBarItem(fmt.Sprintf("tokei %s", dm.tokeiVersion), "#8338ec", 0))
+	}
+
+	items = append(items,
 		NewBarItem("PATH", "#FF5F87", 0),
 		NewBarItem(dm.nav.Entry().Path, "", -1),
-		NewBarItem("MODE", "#06ffa5", 0),
+		NewBarItem("MODE", "#06b6d4", 0),
 		NewBarItem(modeStr, "", 0),
-		NewBarItem("LANG FILTER", "#3a86ff", 0),
+		NewBarItem("LANG", "#3a86ff", 0),
 		NewBarItem(dm.statusLangLabel(), "", 0),
-		NewBarItem("SORT", "#06ffa5", 0),
-		NewBarItem(fmt.Sprintf("%s %s", dm.sortState.Key, dm.sortState.DirectionArrow()), "", 0),
-		NewBarItem("CODE", "#fb5607", 0),
-		DefaultBarItem(strconv.FormatInt(currentStats.Code, 10)),
-		NewBarItem("TOTAL", "#ffbe0b", 0),
-		DefaultBarItem(strconv.FormatInt(currentStats.Total(), 10)),
+	)
+
+	if dm.width >= showSortMinWidth {
+		items = append(items,
+			NewBarItem("SORT", "#14b8a6", 0),
+			NewBarItem(fmt.Sprintf("%s %s", dm.sortState.Key, dm.sortState.DirectionArrow()), "", 0),
+		)
 	}
+
+	items = append(items,
+		NewBarItem("CODE", "#fb5607", 0),
+		DefaultBarItem(codeStr),
+		NewBarItem("TOTAL", "#ffbe0b", 0),
+		DefaultBarItem(totalStr),
+	)
+
 	return statusBarStyle.Margin(1, 0, 0, 0).Render(NewStatusBar(items, dm.width))
 }
 

@@ -87,13 +87,27 @@ func NewStatusBar(items []*BarItem, totalWidth int) string {
 		maxItemWidth = int(
 			math.Ceil(float64(totalWidth) / float64(len(toMaxWidth))),
 		)
+		if maxItemWidth < 0 {
+			maxItemWidth = 0
+		}
 	}
 
 	for i := range items {
 		style := styles[i]
 
 		if _, ok := toMaxWidth[i]; ok {
-			style = style.Width(min(totalWidth, maxItemWidth))
+			w := min(totalWidth, maxItemWidth)
+			if w < 0 {
+				w = 0
+			}
+			style = style.Width(w)
+
+			// Truncate the content so it cannot wrap beyond the allocated width.
+			contentMaxWidth := style.GetWidth() - style.GetHorizontalFrameSize()
+			if contentMaxWidth < 0 {
+				contentMaxWidth = 0
+			}
+			items[i].content = truncateVisual(items[i].content, contentMaxWidth)
 
 			totalWidth -= style.GetWidth()
 		}
