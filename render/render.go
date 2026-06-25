@@ -1,7 +1,6 @@
 package render
 
 import (
-	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/help"
@@ -190,30 +189,7 @@ func (vm *ViewModel) treemapDrillDown() {
 		return
 	}
 	if entry.IsDir {
-		// The selected block may be a nested directory. Walk from the current
-		// navigation entry down through each path component.
-		currentPath := vm.nav.Entry().Path
-		rel, err := filepath.Rel(currentPath, entry.Path)
-		if err != nil {
-			return
-		}
-		parts := strings.Split(rel, string(filepath.Separator))
-		var names []string
-		for _, p := range parts {
-			if p != "" && p != "." {
-				names = append(names, p)
-			}
-		}
-		if len(names) == 0 {
-			return
-		}
-		for i, name := range names {
-			parentCursor := 0
-			if i == 0 {
-				parentCursor = vm.dirModel.treemapSelected
-			}
-			vm.nav.Down(name, parentCursor, 0)
-		}
+		vm.nav.Down(entry.Name(), vm.dirModel.treemapSelected, 0)
 		vm.dirModel.treemapSelected = 0
 		vm.dirModel.Update(ScanFinished{ResetCursor: true})
 	} else {
