@@ -46,7 +46,11 @@ func (vm *ViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		bk := bindingKey(strings.ToLower(msg.String()))
 
 		switch bk {
-		case quit, cancel:
+		case quit:
+			if vm.dirModel.mode != PREVIEW && vm.dirModel.mode != INPUT {
+				return vm, tea.Quit
+			}
+		case cancel:
 			return vm, tea.Quit
 		case enter:
 			if vm.dirModel.mode == INPUT {
