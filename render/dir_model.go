@@ -504,10 +504,14 @@ func (dm *DirModel) handleKeyBindings(msg tea.KeyMsg) (tea.Cmd, bool) {
 	if dm.treemapMode {
 		switch bk {
 		case "up", "k":
-			dm.moveTreemapSelection(-1)
+			if dm.treemapSelected > 0 {
+				dm.treemapSelected--
+			}
 			return nil, true
 		case "down", "j":
-			dm.moveTreemapSelection(1)
+			if dm.treemapSelected < len(dm.treemapBlocks)-1 {
+				dm.treemapSelected++
+			}
 			return nil, true
 		case toggleTree:
 			// Switch from treemap view back to tree table view.
@@ -1189,55 +1193,6 @@ func (dm *DirModel) viewTreemap(availableHeight int) string {
 		view, _ = Treemap(w, h, children, getSize, dm.treemapSelected)
 	}
 	return view
-}
-
-// moveTreemapSelection moves the keyboard selection among top-level (level 0)
-// treemap blocks. Nested blocks can still be selected with the mouse, but j/k
-// always stay at the current directory's immediate children.
-func (dm *DirModel) moveTreemapSelection(delta int) {
-	if len(dm.treemapBlocks) == 0 {
-		return
-	}
-
-	// Collect indices of all top-level blocks in display order.
-	topIdxs := make([]int, 0)
-	for i, b := range dm.treemapBlocks {
-		if b.level == 0 {
-			topIdxs = append(topIdxs, i)
-		}
-	}
-	if len(topIdxs) == 0 {
-		return
-	}
-
-	// Find the current position among top-level blocks.
-	currentTop := dm.treemapSelected
-	if currentTop < 0 || currentTop >= len(dm.treemapBlocks) {
-		currentTop = dm.treemapBlocks[topIdxs[0]].topIdx
-	} else {
-		currentTop = dm.treemapBlocks[currentTop].topIdx
-	}
-
-	pos := -1
-	for i, top := range topIdxs {
-		if dm.treemapBlocks[top].topIdx == currentTop {
-			pos = i
-			break
-		}
-	}
-	if pos < 0 {
-		pos = 0
-	}
-
-	pos += delta
-	if pos < 0 {
-		pos = 0
-	}
-	if pos >= len(topIdxs) {
-		pos = len(topIdxs) - 1
-	}
-
-	dm.treemapSelected = topIdxs[pos]
 }
 
 func (dm *DirModel) viewChart() string {
