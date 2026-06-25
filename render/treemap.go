@@ -3,6 +3,7 @@ package render
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/zdyxry/tokui/structure"
@@ -22,25 +23,41 @@ type treemapItem struct {
 }
 
 // treemapBlock associates a laid-out rectangle with its source entry and label.
+// Nested treemaps are supported: a top-level block (level 0) may contain
+// child blocks (level 1+) that layout the directory's immediate children.
+// topIdx tracks which top-level block a nested block belongs to so keyboard
+// navigation can stay at the top level while mouse selection can reach nested
+// tiles.
 type treemapBlock struct {
-	entry *structure.Entry
-	rect  treemapRect
-	label string
+	entry  *structure.Entry
+	rect   treemapRect
+	label  string
+	level  int
+	color  lipgloss.Color
+	topIdx int
 }
 
-// treemapColors is the color cycle used for treemap tiles.
-// These are deliberately low-saturation, terminal-friendly colors so the
-// treemap is easy on the eyes while still making adjacent blocks distinguishable.
+// Constants controlling nested treemap layout.
+const (
+	treemapMaxNestedDepth = 5 // safety cap to avoid runaway recursion
+	minNestedWidth        = 12
+	minNestedHeight       = 7
+	minNestedItems        = 2
+)
+
+// treemapColors is the color cycle used for top-level treemap tiles.
+// The palette is saturated enough to distinguish neighbors but not so
+// bright that nested tiles become harsh on the eyes.
 var treemapColors = []lipgloss.Color{
-	"#7B9E89", // sage green
-	"#7A8B99", // slate blue
-	"#A98B6A", // muted amber
-	"#8F7B9A", // dusty purple
-	"#6A9A9A", // teal
-	"#B88A7A", // terracotta
-	"#8E9B7B", // olive
-	"#9A8B7A", // warm gray
-	"#7B8FA3", // steel blue
+	"#3498DB", // peter river blue
+	"#2ECC71", // emerald green
+	"#F39C12", // orange
+	"#9B59B6", // amethyst purple
+	"#1ABC9C", // turquoise
+	"#E74C3C", // alizarin red
+	"#F1C40F", // sunflower yellow
+	"#E67E22", // carrot orange
+	"#16A085", // green sea
 }
 
 // treemapSelectedBorder is used to outline the currently selected tile.
@@ -60,6 +77,10 @@ type treemapCell struct {
 }
 
 // Treemap renders a squarified treemap for the current directory's children.
+// For directories that occupy enough space, their immediate children are laid
+// out as nested tiles (up to treemapMaxNestedDepth levels deep) so large tiles
+// do not waste screen real-estate.
+//
 // It returns the rendered string and the list of layout blocks, which the
 // caller can use for keyboard/mouse selection.
 func Treemap(width, height int, children []*structure.Entry, getSize func(*structure.Entry) int64, selectedIdx int) (string, []treemapBlock) {
@@ -106,32 +127,35 @@ func Treemap(width, height int, children []*structure.Entry, getSize func(*struc
 	// Compute squarified layout.
 	rects := squarify(items, total, treemapRect{0, 0, width, height})
 
-	// Build display blocks (labels, etc.).
-	blocks := make([]treemapBlock, 0, len(items))
+	// Build top-level blocks.
+	topBlocks := make([]treemapBlock, 0, len(items))
 	for i, it := range items {
 		r := rects[i]
 		if r.w <= 0 || r.h <= 0 {
 			continue
 		}
 
-		var label string
-		if it.entry != nil {
-			name := it.entry.Name()
-			if it.entry.IsDir {
-				name += "/"
-			}
-			label = fmt.Sprintf("%s %s", name, formatNumber(it.size))
-		} else {
-			label = fmt.Sprintf("other %s", formatNumber(it.size))
-		}
-		blocks = append(blocks, treemapBlock{
-			entry: it.entry,
-			rect:  r,
-			label: label,
+		label := buildLabel(it.entry, it.size)
+		color := treemapColors[i%len(treemapColors)]
+		topBlocks = append(topBlocks, treemapBlock{
+			entry:  it.entry,
+			rect:   r,
+			label:  label,
+			level:  0,
+			color:  color,
+			topIdx: i,
 		})
 	}
 
-	// Draw the grid.
+	// Build nested blocks for directories that have enough room.
+	allBlocks := make([]treemapBlock, 0, len(topBlocks)*2)
+	for i := range topBlocks {
+		allBlocks = append(allBlocks, topBlocks[i])
+		buildNested(&allBlocks, len(allBlocks)-1, getSize, 1)
+	}
+
+	// Draw the grid. Parents are drawn before children so child borders and
+	// labels render on top and create a layered effect.
 	grid := make([][]treemapCell, height)
 	for y := 0; y < height; y++ {
 		grid[y] = make([]treemapCell, width)
@@ -140,10 +164,9 @@ func Treemap(width, height int, children []*structure.Entry, getSize func(*struc
 		}
 	}
 
-	for i, b := range blocks {
-		color := treemapColors[i%len(treemapColors)]
+	for i, b := range allBlocks {
 		selected := i == selectedIdx
-		fillRect(grid, b.rect, color)
+		fillRect(grid, b.rect, b.color)
 		drawBorder(grid, b.rect, selected)
 		placeLabel(grid, b.rect, b.label, selected)
 	}
@@ -166,7 +189,152 @@ func Treemap(width, height int, children []*structure.Entry, getSize func(*struc
 		lines[y] = sb.String()
 	}
 
-	return strings.Join(lines, "\n"), blocks
+	return strings.Join(lines, "\n"), allBlocks
+}
+
+// buildNested lays out children inside a directory block when there is enough
+// space, then recurses up to treemapMaxNestedDepth.
+func buildNested(allBlocks *[]treemapBlock, parentIdx int, getSize func(*structure.Entry) int64, level int) {
+	if level > treemapMaxNestedDepth {
+		return
+	}
+	parent := (*allBlocks)[parentIdx]
+	if parent.entry == nil || !parent.entry.IsDir {
+		return
+	}
+
+	bounds := nestedBounds(parent.rect)
+	if !canNest(level, bounds) {
+		return
+	}
+
+	items := make([]treemapItem, 0)
+	var total int64
+	for _, c := range parent.entry.Child {
+		if c == nil {
+			continue
+		}
+		sz := getSize(c)
+		if sz > 0 {
+			items = append(items, treemapItem{entry: c, size: sz})
+			total += sz
+		}
+	}
+	if len(items) < minNestedItems || total == 0 {
+		return
+	}
+
+	sort.Slice(items, func(i, j int) bool { return items[i].size > items[j].size })
+
+	maxItems := (bounds.w * bounds.h) / 8
+	if maxItems < minNestedItems {
+		maxItems = minNestedItems
+	}
+	if len(items) > maxItems {
+		var otherSize int64
+		for i := maxItems - 1; i < len(items); i++ {
+			otherSize += items[i].size
+		}
+		items = items[:maxItems-1]
+		items = append(items, treemapItem{entry: nil, size: otherSize})
+	}
+
+	rects := squarify(items, total, bounds)
+	startIdx := len(*allBlocks)
+	for i, it := range items {
+		r := rects[i]
+		if r.w <= 0 || r.h <= 0 {
+			continue
+		}
+
+		label := buildLabel(it.entry, it.size)
+		// Children inherit the parent's hue family so nested tiles feel cohesive.
+		// Each deeper level darkens slightly, and siblings alternate a tiny bit
+		// so adjacent rectangles remain distinguishable.
+		shift := float64(i%2)*0.06 - 0.03
+		color := adjustColor(parent.color, -0.05+shift)
+		*allBlocks = append(*allBlocks, treemapBlock{
+			entry:  it.entry,
+			rect:   r,
+			label:  label,
+			level:  level,
+			color:  color,
+			topIdx: parent.topIdx,
+		})
+	}
+
+	// Only recurse into the blocks we just added at this level. The slice
+	// grows during deeper recursion, so we must freeze the loop bound here.
+	endIdx := len(*allBlocks)
+	for i := startIdx; i < endIdx; i++ {
+		buildNested(allBlocks, i, getSize, level+1)
+	}
+}
+
+// canNest decides whether a directory tile has enough room to show its
+// children at the requested nesting level. Deeper levels require exponentially
+// more space so small tiles do not become unreadably crowded.
+func canNest(level int, bounds treemapRect) bool {
+	if bounds.w < minNestedWidth || bounds.h < minNestedHeight {
+		return false
+	}
+	// Level 1 needs the base area; each deeper level needs twice as much.
+	minArea := (minNestedWidth * minNestedHeight) * (1 << (level - 1))
+	return bounds.w*bounds.h >= minArea
+}
+
+// nestedBounds returns the inner rectangle available for laying out a parent
+// directory's children. It reserves space for the parent's border and label.
+func nestedBounds(r treemapRect) treemapRect {
+	return treemapRect{
+		x: r.x + 1,
+		y: r.y + 2,
+		w: r.w - 2,
+		h: r.h - 3,
+	}
+}
+
+// buildLabel creates a human-readable label for a treemap item.
+func buildLabel(entry *structure.Entry, size int64) string {
+	if entry != nil {
+		name := entry.Name()
+		if entry.IsDir {
+			name += "/"
+		}
+		return fmt.Sprintf("%s %s", name, formatNumber(size))
+	}
+	return fmt.Sprintf("other %s", formatNumber(size))
+}
+
+// adjustColor lightens (percent > 0) or darkens (percent < 0) a hex
+// lipgloss.Color. Nested tiles are lightened so they stand out inside their
+// parent instead of turning muddy.
+func adjustColor(c lipgloss.Color, percent float64) lipgloss.Color {
+	s := string(c)
+	if len(s) != 7 || s[0] != '#' {
+		return c
+	}
+	r, err1 := strconv.ParseInt(s[1:3], 16, 64)
+	g, err2 := strconv.ParseInt(s[3:5], 16, 64)
+	b, err3 := strconv.ParseInt(s[5:7], 16, 64)
+	if err1 != nil || err2 != nil || err3 != nil {
+		return c
+	}
+	adj := func(v int64) int64 {
+		if percent > 0 {
+			v = int64(float64(v) + (255.0-float64(v))*percent)
+		} else {
+			v = int64(float64(v) * (1 + percent))
+		}
+		if v < 0 {
+			v = 0
+		}
+		if v > 255 {
+			v = 255
+		}
+		return v
+	}
+	return lipgloss.Color(fmt.Sprintf("#%02x%02x%02x", adj(r), adj(g), adj(b)))
 }
 
 // squarify recursively lays out items into near-square rectangles.
@@ -364,14 +532,20 @@ func setCell(grid [][]treemapCell, x, y int, ch rune, fg, bg lipgloss.Color) {
 	}
 }
 
-// treemapBlockAt returns the index of the block containing the given cell
-// coordinates, or -1 if none.
+// treemapBlockAt returns the index of the innermost block containing the given
+// cell coordinates, or -1 if none. Nested blocks take precedence over their
+// parents so clicks select the actual tile the user points at.
 func treemapBlockAt(blocks []treemapBlock, x, y int) int {
+	best := -1
+	bestLevel := -1
 	for i, b := range blocks {
 		r := b.rect
 		if x >= r.x && x < r.x+r.w && y >= r.y && y < r.y+r.h {
-			return i
+			if b.level > bestLevel {
+				bestLevel = b.level
+				best = i
+			}
 		}
 	}
-	return -1
+	return best
 }
