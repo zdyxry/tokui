@@ -11,7 +11,13 @@
 
 ## 📸 Previews
 
-![Demo](./assets/demo.gif)
+Screenshots below show `tokui` analyzing the [Prometheus](https://github.com/prometheus/prometheus) codebase.
+
+| Default View | Language Distribution (`Ctrl+w`) |
+|:---:|:---:|
+| ![Default View](./assets/demo1.png) | ![Language Distribution](./assets/demo2.png) |
+| **Tree Mode** | **Treemap Mode** |
+| ![Tree Mode](./assets/demo3.png) | ![Treemap Mode](./assets/demo4.png) |
 
 ## ✨ Features
 
@@ -40,6 +46,14 @@ If you are building from source or want to use your own `tokei` installation, en
 ### Pre-compiled Binaries
 
 Download the latest release from the [Releases](https://github.com/zdyxry/tokui/releases) page. Unzip and run—no extra installation required.
+
+### Using `go install` (Go 1.24+)
+
+```bash
+go install github.com/zdyxry/tokui@latest
+```
+
+This downloads, compiles, and installs the latest `tokui` binary into your `$GOPATH/bin` (or `$GOBIN`). The `tokei` binary is embedded at compile time, so no separate `tokei` installation is required.
 
 ### Build from Source (Go 1.24+)
 
