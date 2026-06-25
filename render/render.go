@@ -204,6 +204,9 @@ func (vm *ViewModel) treemapDrillDown() {
 		parts := strings.Split(rel, string(filepath.Separator))
 		var names []string
 		for _, p := range parts {
+			if p == ".." {
+				return
+			}
 			if p != "" && p != "." {
 				names = append(names, p)
 			}

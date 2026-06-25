@@ -1218,16 +1218,7 @@ func (dm *DirModel) moveTreemapSelection(delta int) {
 		currentTop = dm.treemapBlocks[currentTop].topIdx
 	}
 
-	pos := -1
-	for i, top := range topIdxs {
-		if dm.treemapBlocks[top].topIdx == currentTop {
-			pos = i
-			break
-		}
-	}
-	if pos < 0 {
-		pos = 0
-	}
+	pos := currentTop
 
 	pos += delta
 	if pos < 0 {

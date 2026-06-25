@@ -143,7 +143,7 @@ func Treemap(width, height int, children []*structure.Entry, getSize func(*struc
 			label:  label,
 			level:  0,
 			color:  color,
-			topIdx: i,
+			topIdx: len(topBlocks),
 		})
 	}
 
@@ -208,7 +208,7 @@ func buildNested(allBlocks *[]treemapBlock, parentIdx int, getSize func(*structu
 		return
 	}
 
-	items := make([]treemapItem, 0)
+	items := make([]treemapItem, 0, len(parent.entry.Child))
 	var total int64
 	for _, c := range parent.entry.Child {
 		if c == nil {
