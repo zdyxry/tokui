@@ -133,6 +133,7 @@ Flags:
 | `Tab`               | Cycle through language filters                                      |
 | `Ctrl`+`L`          | Open multi-language selection overlay                               |
 | `/`                 | Activate file name filter (press `Esc` to exit filter mode)         |
+| `Ctrl`+`P`          | Open global fuzzy search (press `Enter` to jump, `Esc` to close)    |
 | `s`                 | Cycle sort column (Name → Languages → Code → Comments → Blanks → Total → % of Parent) |
 | `S`                 | Toggle ascending / descending order for the current sort column     |
 | `Ctrl`+`w`          | Show/hide language distribution pie chart                           |

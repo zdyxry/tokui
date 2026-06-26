@@ -48,13 +48,14 @@ func (vm *ViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		switch bk {
 		case quit:
-			if vm.dirModel.mode != PREVIEW && vm.dirModel.mode != INPUT {
+			if vm.dirModel.mode != PREVIEW && vm.dirModel.mode != INPUT && vm.dirModel.mode != SEARCH {
 				return vm, tea.Quit
 			}
 		case cancel:
 			return vm, tea.Quit
 		case enter:
-			if vm.dirModel.mode == INPUT {
+			switch vm.dirModel.mode {
+			case INPUT:
 				selectedEntry := vm.dirModel.SelectedEntry()
 				vm.dirModel.ExitSearchMode()
 				if selectedEntry != nil {
@@ -72,7 +73,9 @@ func (vm *ViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else if vm.dirModel.IsParentSelected() {
 					vm.levelUp()
 				}
-			} else {
+			case SEARCH:
+				vm.dirModel.applySearchResult()
+			default:
 				if vm.dirModel.IsParentSelected() {
 					vm.levelUp()
 				} else if vm.dirModel.treeMode {
@@ -85,7 +88,7 @@ func (vm *ViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case backspace:
 			// If DirModel is in input mode, don't handle top-level shortcuts
-			if vm.dirModel.mode == INPUT {
+			if vm.dirModel.mode == INPUT || vm.dirModel.mode == SEARCH {
 				break
 			}
 			vm.levelUp()

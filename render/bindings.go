@@ -18,6 +18,7 @@ const (
 	enter            bindingKey = "enter"
 	editFile         bindingKey = "e"
 	quickSearch      bindingKey = "/"
+	globalSearch     bindingKey = "ctrl+p"
 	toggleChart      bindingKey = "ctrl+w"
 	toggleLangFilter bindingKey = "tab"
 	toggleLangSelect bindingKey = "ctrl+l"
@@ -131,6 +132,13 @@ var dirsKeyMap = [][]key.Binding{
 			key.WithHelp(
 				bindKeyStyle.Render(quickSearch.String()),
 				helpDescStyle.Render(" - Quick search"),
+			),
+		),
+		key.NewBinding(
+			key.WithKeys(globalSearch.String()),
+			key.WithHelp(
+				bindKeyStyle.Render(globalSearch.String()),
+				helpDescStyle.Render(" - Global search"),
 			),
 		),
 		key.NewBinding(
