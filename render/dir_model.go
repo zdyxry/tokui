@@ -263,7 +263,7 @@ func (dm *DirModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		dm.filters.Update(msg)
 		var searchCmd tea.Cmd
 		dm.searchInput, searchCmd = dm.searchInput.Update(msg)
-		_ = searchCmd
+		cmd = searchCmd
 
 	case tea.KeyMsg:
 		if dm.err != nil {

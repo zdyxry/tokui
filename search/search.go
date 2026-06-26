@@ -53,18 +53,22 @@ func BuildIndex(root *structure.Entry) *Index {
 	idx := &Index{}
 	idx.items = make([]Item, 0, 1024)
 
-	rootPrefix := strings.TrimSuffix(filepath.ToSlash(root.Path), "/")
+	rootPath := filepath.Clean(filepath.FromSlash(root.Path))
 
 	var walk func(entry *structure.Entry)
 	walk = func(entry *structure.Entry) {
-		entryPath := filepath.ToSlash(entry.Path)
+		if entry == nil {
+			return
+		}
 
-		var relPath string
-		if entry == root {
-			relPath = "."
-		} else {
-			relPath = strings.TrimPrefix(entryPath, rootPrefix)
-			relPath = strings.TrimPrefix(relPath, "/")
+		relPath := "."
+		if entry != root {
+			entryPath := filepath.Clean(filepath.FromSlash(entry.Path))
+			r, err := filepath.Rel(rootPath, entryPath)
+			if err != nil {
+				r = entryPath
+			}
+			relPath = filepath.ToSlash(filepath.Clean(r))
 		}
 
 		idx.items = append(idx.items, Item{
@@ -74,6 +78,9 @@ func BuildIndex(root *structure.Entry) *Index {
 
 		if entry.IsDir {
 			for _, child := range entry.Child {
+				if child == nil {
+					continue
+				}
 				walk(child)
 			}
 		}
