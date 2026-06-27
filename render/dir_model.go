@@ -461,7 +461,7 @@ func (dm *DirModel) handleKeyBindings(msg tea.KeyMsg) (tea.Cmd, bool) {
 		return nil, false
 	}
 
-	bk := bindingKey(strings.ToLower(msg.String()))
+	bk := parseBindingKey(msg)
 
 	// Language select mode
 	if dm.mode == SELECT_LANG {
@@ -493,10 +493,12 @@ func (dm *DirModel) handleKeyBindings(msg tea.KeyMsg) (tea.Cmd, bool) {
 			dm.selectMode = false
 			dm.updateTableData()
 			return nil, true
+		default:
+			return nil, true
 		}
 	}
 
-	bk = bindingKey(strings.ToLower(msg.String()))
+	bk = parseBindingKey(msg)
 
 	// Quick search (/ key): activate name filter mode
 	if bk == quickSearch {

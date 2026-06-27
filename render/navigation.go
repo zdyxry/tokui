@@ -87,13 +87,13 @@ func (n *Navigation) Down(name string, parentCursor, childCursor int) {
 
 // AbsPathFromSelectedRow returns absolute path from selected row, using column 1's hidden path
 func (n *Navigation) AbsPathFromSelectedRow(selectedRow []string) string {
-	if len(selectedRow) > 1 {
+	if len(selectedRow) > 2 {
 		return selectedRow[1]
 	}
 
 	// If unable to get it, fall back to building the path based on current entry and name
-	if len(selectedRow) > 2 {
-		return filepath.Join(n.Entry().Path, selectedRow[2])
+	if len(selectedRow) > 1 {
+		return filepath.Join(n.Entry().Path, selectedRow[len(selectedRow)-1])
 	}
 
 	return ""

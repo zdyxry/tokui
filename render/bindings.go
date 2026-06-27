@@ -1,13 +1,27 @@
 package render
 
 import (
+	"strings"
+
 	"github.com/charmbracelet/bubbles/key"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 type bindingKey string
 
 func (bk bindingKey) String() string {
 	return string(bk)
+}
+
+// parseBindingKey converts a KeyMsg to a bindingKey. Single-character uppercase
+// runes are preserved so that Shift+letter bindings (e.g. "S") work, while
+// everything else is normalized to lower case.
+func parseBindingKey(msg tea.KeyMsg) bindingKey {
+	raw := msg.String()
+	if len(raw) == 1 && raw != strings.ToLower(raw) {
+		return bindingKey(raw)
+	}
+	return bindingKey(strings.ToLower(raw))
 }
 
 const (
