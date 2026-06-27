@@ -77,15 +77,27 @@ func startIntegrationApp(t *testing.T, treeMode, treemapMode bool) *teatest.Test
 	vm := newIntegrationViewModel(t, treeMode, treemapMode)
 	tm := teatest.NewTestModel(t, vm, teatest.WithInitialTermSize(integrationWidth, integrationHeight))
 
-	// Give the Bubble Tea goroutine a moment to start so messages are not
-	// dropped before the event loop is ready.
-	time.Sleep(100 * time.Millisecond)
+	// teatest starts the Bubble Tea program in a goroutine. Messages sent
+	// before the event loop/renderer are ready are silently dropped, so we
+	// poll with the initialization messages until the project root renders.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		tm.Send(tea.WindowSizeMsg{Width: integrationWidth, Height: integrationHeight})
+		tm.Send(ScanFinished{})
 
-	// Finish initialization just like the real application does.
-	tm.Send(tea.WindowSizeMsg{Width: integrationWidth, Height: integrationHeight})
-	tm.Send(ScanFinished{})
+		out, err := io.ReadAll(tm.Output())
+		if err != nil {
+			t.Fatalf("reading output: %v", err)
+		}
+		if bytes.Contains(out, []byte("project")) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("project root did not render within %s", 2*time.Second)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 
-	waitForOutput(t, tm, "project")
 	return tm
 }
 

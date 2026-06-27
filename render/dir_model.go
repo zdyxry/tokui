@@ -272,7 +272,7 @@ func (dm *DirModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// If in preview mode, handle preview-specific keys
 		if dm.mode == PREVIEW && dm.filePreview != nil {
-			key := strings.ToLower(msg.String())
+			key := parseBindingKey(msg).String()
 			if key == "q" || key == "esc" {
 				// Close file preview
 				dm.mode = READY
