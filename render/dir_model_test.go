@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/zdyxry/tokui/filter"
 	"github.com/zdyxry/tokui/structure"
 )
@@ -597,6 +598,7 @@ func TestDirModelGlobalSearchPgDownNoMatches(t *testing.T) {
 	}
 }
 
+<<<<<<< HEAD
 func TestDirModelLanguageSelectOverlay(t *testing.T) {
 	dm := newTestDirModel()
 	dm.Update(ScanFinished{})
@@ -966,5 +968,65 @@ func TestDirModelFindCursorLineInView(t *testing.T) {
 	lines := strings.Split(view, "\n")
 	if line >= len(lines)-tableHeaderHeight {
 		t.Errorf("cursor line %d out of range for view with %d data lines", line, len(lines)-tableHeaderHeight)
+	}
+}
+
+func TestTreemapColorModeToggle(t *testing.T) {
+	dm := newTestDirModel()
+	dm.Update(ScanFinished{})
+	dm.treemapMode = true
+	dm.width = 100
+	dm.height = 30
+	dm.updateTableData()
+
+	if dm.treemapColorByLang {
+		t.Fatal("expected default directory color mode")
+	}
+
+	dm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	if !dm.treemapColorByLang {
+		t.Fatal("expected language color mode after pressing c")
+	}
+	if !strings.Contains(dm.View(), "Languages") {
+		t.Fatal("expected legend to auto-show in language color mode")
+	}
+
+	dm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	if dm.treemapColorByLang {
+		t.Fatal("expected directory color mode after second c")
+	}
+	if strings.Contains(dm.View(), "Languages") {
+		t.Fatal("expected legend to hide in directory color mode")
+	}
+}
+
+func TestTreemapLegendAutoShow(t *testing.T) {
+	dm := newTestDirModel()
+	dm.Update(ScanFinished{})
+	dm.treemapMode = true
+	dm.treemapColorByLang = true
+	dm.width = 100
+	dm.height = 30
+	dm.updateTableData()
+
+	view := dm.View()
+	if !strings.Contains(view, "Languages") {
+		t.Fatalf("expected legend to auto-show in language color mode, got:\n%s", view)
+	}
+}
+
+func TestTreemapViewHeight(t *testing.T) {
+	dm := newTestDirModel()
+	dm.Update(ScanFinished{})
+	dm.treemapMode = true
+	dm.treemapColorByLang = true
+	dm.width = 100
+	dm.height = 30
+	dm.updateTableData()
+
+	view := dm.View()
+	got := lipgloss.Height(view)
+	if got != dm.height {
+		t.Fatalf("expected view height %d, got %d", dm.height, got)
 	}
 }

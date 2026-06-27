@@ -43,7 +43,16 @@ const (
 	minNestedWidth        = 12
 	minNestedHeight       = 7
 	minNestedItems        = 2
+	treemapLegendWidth    = 22
 )
+
+// minTreemapWidthWithoutLegend is the smallest useful treemap canvas width when
+// the legend panel is also visible.
+const minTreemapWidthWithoutLegend = 24
+
+// treemapLegendTotalWidth is the rendered width of the legend panel including
+// its lipgloss border (2 cells).
+const treemapLegendTotalWidth = treemapLegendWidth + 2
 
 // treemapColors is the color cycle used for top-level treemap tiles.
 // The palette is saturated enough to distinguish neighbors but not so
@@ -62,6 +71,51 @@ var treemapColors = []lipgloss.Color{
 
 // treemapSelectedBorder is used to outline the currently selected tile.
 var treemapSelectedBorder = lipgloss.Color("#ebbd34")
+
+// langColor returns the GitHub Linguist color for a language. Unknown
+// languages fall back to a neutral gray.
+func langColor(lang string) lipgloss.Color {
+	if lang == "" {
+		return lipgloss.Color("#7F8C8D")
+	}
+	if c, ok := githubLangColors[lang]; ok {
+		return c
+	}
+	return lipgloss.Color("#7F8C8D")
+}
+
+// entryPrimaryLang returns the language with the largest total line count for
+// an entry. For files this is usually the only language; for directories it is
+// the dominant language among all children.
+func entryPrimaryLang(e *structure.Entry) string {
+	if e == nil || len(e.StatsByLang) == 0 {
+		return ""
+	}
+	var best string
+	var bestTotal int64
+	for lang, stats := range e.StatsByLang {
+		if stats.Total() > bestTotal {
+			bestTotal = stats.Total()
+			best = lang
+		}
+	}
+	return best
+}
+
+// treemapColorFor picks the tile color based on the current coloring mode.
+// In language-color mode, directories are shaded slightly darker than files so
+// that the container hierarchy remains visible even when all children share the
+// same language.
+func treemapColorFor(entry *structure.Entry, colorIdx int, colorByLang bool) lipgloss.Color {
+	if colorByLang {
+		c := langColor(entryPrimaryLang(entry))
+		if entry != nil && entry.IsDir {
+			c = adjustColor(c, -0.12)
+		}
+		return c
+	}
+	return treemapColors[colorIdx%len(treemapColors)]
+}
 
 // treemapEmptyStyle is shown when the treemap has nothing to render.
 var treemapEmptyStyle = lipgloss.NewStyle().
@@ -83,7 +137,7 @@ type treemapCell struct {
 //
 // It returns the rendered string and the list of layout blocks, which the
 // caller can use for keyboard/mouse selection.
-func Treemap(width, height int, children []*structure.Entry, getSize func(*structure.Entry) int64, selectedIdx int) (string, []treemapBlock) {
+func Treemap(width, height int, children []*structure.Entry, getSize func(*structure.Entry) int64, selectedIdx int, colorByLang bool) (string, []treemapBlock) {
 	if width <= 0 || height <= 0 {
 		return "", nil
 	}
@@ -136,7 +190,7 @@ func Treemap(width, height int, children []*structure.Entry, getSize func(*struc
 		}
 
 		label := buildLabel(it.entry, it.size)
-		color := treemapColors[i%len(treemapColors)]
+		color := treemapColorFor(it.entry, i, colorByLang)
 		topBlocks = append(topBlocks, treemapBlock{
 			entry:  it.entry,
 			rect:   r,
@@ -151,7 +205,7 @@ func Treemap(width, height int, children []*structure.Entry, getSize func(*struc
 	allBlocks := make([]treemapBlock, 0, len(topBlocks)*2)
 	for i := range topBlocks {
 		allBlocks = append(allBlocks, topBlocks[i])
-		buildNested(&allBlocks, len(allBlocks)-1, getSize, 1)
+		buildNested(&allBlocks, len(allBlocks)-1, getSize, 1, colorByLang)
 	}
 
 	// Draw the grid. Parents are drawn before children so child borders and
@@ -166,9 +220,10 @@ func Treemap(width, height int, children []*structure.Entry, getSize func(*struc
 
 	for i, b := range allBlocks {
 		selected := i == selectedIdx
+		isDir := b.entry != nil && b.entry.IsDir
 		fillRect(grid, b.rect, b.color)
 		drawBorder(grid, b.rect, selected)
-		placeLabel(grid, b.rect, b.label, selected)
+		placeLabel(grid, b.rect, b.label, selected, isDir, colorByLang)
 	}
 
 	// Convert grid to a styled string.
@@ -194,7 +249,7 @@ func Treemap(width, height int, children []*structure.Entry, getSize func(*struc
 
 // buildNested lays out children inside a directory block when there is enough
 // space, then recurses up to treemapMaxNestedDepth.
-func buildNested(allBlocks *[]treemapBlock, parentIdx int, getSize func(*structure.Entry) int64, level int) {
+func buildNested(allBlocks *[]treemapBlock, parentIdx int, getSize func(*structure.Entry) int64, level int, colorByLang bool) {
 	if level > treemapMaxNestedDepth {
 		return
 	}
@@ -248,11 +303,16 @@ func buildNested(allBlocks *[]treemapBlock, parentIdx int, getSize func(*structu
 		}
 
 		label := buildLabel(it.entry, it.size)
-		// Children inherit the parent's hue family so nested tiles feel cohesive.
-		// Each deeper level darkens slightly, and siblings alternate a tiny bit
-		// so adjacent rectangles remain distinguishable.
-		shift := float64(i%2)*0.06 - 0.03
-		color := adjustColor(parent.color, -0.05+shift)
+		var color lipgloss.Color
+		if colorByLang {
+			color = treemapColorFor(it.entry, i, true)
+		} else {
+			// Children inherit the parent's hue family so nested tiles feel cohesive.
+			// Each deeper level darkens slightly, and siblings alternate a tiny bit
+			// so adjacent rectangles remain distinguishable.
+			shift := float64(i%2)*0.06 - 0.03
+			color = adjustColor(parent.color, -0.05+shift)
+		}
 		*allBlocks = append(*allBlocks, treemapBlock{
 			entry:  it.entry,
 			rect:   r,
@@ -267,7 +327,7 @@ func buildNested(allBlocks *[]treemapBlock, parentIdx int, getSize func(*structu
 	// grows during deeper recursion, so we must freeze the loop bound here.
 	endIdx := len(*allBlocks)
 	for i := startIdx; i < endIdx; i++ {
-		buildNested(allBlocks, i, getSize, level+1)
+		buildNested(allBlocks, i, getSize, level+1, colorByLang)
 	}
 }
 
@@ -479,7 +539,7 @@ func borderRune(x, left, right int, leftCorner, rightCorner, mid rune) rune {
 	return mid
 }
 
-func placeLabel(grid [][]treemapCell, r treemapRect, label string, selected bool) {
+func placeLabel(grid [][]treemapCell, r treemapRect, label string, selected, isDir, colorByLang bool) {
 	innerW := r.w - 2
 	innerH := r.h - 2
 	if innerW <= 0 || innerH <= 0 {
@@ -506,8 +566,13 @@ func placeLabel(grid [][]treemapCell, r treemapRect, label string, selected bool
 	fg := lipgloss.Color("#262626")
 	if selected {
 		fg = lipgloss.Color("#FFFFFF")
+	} else if colorByLang {
+		// Language colors vary in brightness; a light label gives more reliable
+		// contrast across the whole palette than the default dark gray.
+		fg = lipgloss.Color("#FFFFFF")
 	}
 
+	bold := selected || (colorByLang && isDir)
 	for i, ch := range runes {
 		pos := x + i
 		if pos >= len(grid[y]) {
@@ -515,7 +580,7 @@ func placeLabel(grid [][]treemapCell, r treemapRect, label string, selected bool
 		}
 		grid[y][pos].ch = ch
 		grid[y][pos].fg = fg
-		grid[y][pos].bold = selected
+		grid[y][pos].bold = bold
 	}
 }
 
@@ -530,6 +595,100 @@ func setCell(grid [][]treemapCell, x, y int, ch rune, fg, bg lipgloss.Color) {
 	if bg != "" {
 		grid[y][x].bg = bg
 	}
+}
+
+type treemapLegendItem struct {
+	lang  string
+	color lipgloss.Color
+	count int
+	lines int64
+}
+
+// buildTreemapLegend renders a side panel that maps colors to languages for the
+// currently visible treemap blocks. It is only meaningful when colorByLang is
+// active.
+func buildTreemapLegend(blocks []treemapBlock, height int, getSize func(*structure.Entry) int64) string {
+	if height < 3 {
+		return ""
+	}
+
+	// Aggregate top-level blocks by their primary language. Using only level 0
+	// blocks avoids double-counting a directory's size together with its nested
+	// children; the legend summarizes the current directory's immediate tiles.
+	items := make(map[string]*treemapLegendItem)
+	for _, b := range blocks {
+		if b.level != 0 {
+			continue
+		}
+		lang := entryPrimaryLang(b.entry)
+		if lang == "" {
+			lang = "Other"
+		}
+		it, ok := items[lang]
+		if !ok {
+			it = &treemapLegendItem{lang: lang, color: langColor(lang)}
+			items[lang] = it
+		}
+		it.count++
+		if b.entry != nil {
+			it.lines += getSize(b.entry)
+		}
+	}
+
+	ordered := make([]*treemapLegendItem, 0, len(items))
+	for _, it := range items {
+		ordered = append(ordered, it)
+	}
+	sort.Slice(ordered, func(i, j int) bool {
+		if ordered[i].lines != ordered[j].lines {
+			return ordered[i].lines > ordered[j].lines
+		}
+		return ordered[i].lang < ordered[j].lang
+	})
+
+	// Reserve one line for the title, the rest for the legend entries.
+	maxEntries := height - 2
+	if maxEntries < 1 {
+		maxEntries = 1
+	}
+	if len(ordered) > maxEntries {
+		ordered = ordered[:maxEntries]
+	}
+
+	contentWidth := treemapLegendWidth - 2
+	contentHeight := height - 2 // subtract top/bottom border
+	if contentHeight < 1 {
+		contentHeight = 1
+	}
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#ebbd34"))
+	lineStyle := lipgloss.NewStyle().Width(contentWidth)
+	blankLine := lineStyle.Render(strings.Repeat(" ", contentWidth))
+
+	lines := make([]string, 0, contentHeight)
+	lines = append(lines, titleStyle.Render("Languages"))
+	for _, it := range ordered {
+		if len(lines) >= contentHeight {
+			break
+		}
+		colorBlock := lipgloss.NewStyle().Foreground(it.color).Render("█ ")
+		label := fmtName(it.lang, contentWidth-4)
+		value := fmt.Sprintf("%d", it.count)
+		padding := strings.Repeat(" ", max(0, contentWidth-lipgloss.Width(label)-lipgloss.Width(value)-2))
+		lines = append(lines, lineStyle.Render(colorBlock+label+padding+value))
+	}
+
+	// Pad so the panel content height matches the treemap canvas minus its border.
+	for len(lines) < contentHeight {
+		lines = append(lines, blankLine)
+	}
+
+	return lipgloss.NewStyle().
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("240")).
+		Padding(0, 0).
+		Width(treemapLegendWidth).
+		Height(contentHeight).
+		Render(lipgloss.JoinVertical(lipgloss.Left, lines...))
 }
 
 // treemapBlockAt returns the index of the innermost block containing the given

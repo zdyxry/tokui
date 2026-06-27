@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/zdyxry/tokui/structure"
 )
 
@@ -15,7 +16,7 @@ func TestTreemapBasic(t *testing.T) {
 	}
 
 	getSize := func(e *structure.Entry) int64 { return e.TotalStats.Total() }
-	view, blocks := Treemap(40, 20, children, getSize, 0)
+	view, blocks := Treemap(40, 20, children, getSize, 0, false)
 
 	if view == "" {
 		t.Fatal("Treemap returned empty view")
@@ -36,7 +37,7 @@ func TestTreemapBasic(t *testing.T) {
 }
 
 func TestTreemapEmpty(t *testing.T) {
-	view, blocks := Treemap(40, 20, nil, func(e *structure.Entry) int64 { return 0 }, 0)
+	view, blocks := Treemap(40, 20, nil, func(e *structure.Entry) int64 { return 0 }, 0, false)
 	if view == "" {
 		t.Fatal("expected non-empty empty-state view")
 	}
@@ -84,7 +85,7 @@ func TestTreemapNestedBlocks(t *testing.T) {
 	children := []*structure.Entry{bigDir, smallDir}
 
 	getSize := func(e *structure.Entry) int64 { return e.TotalStats.Total() }
-	view, blocks := Treemap(60, 30, children, getSize, 0)
+	view, blocks := Treemap(60, 30, children, getSize, 0, false)
 
 	if view == "" {
 		t.Fatal("Treemap returned empty view")
@@ -162,7 +163,7 @@ func TestTreemapTopIdxContiguous(t *testing.T) {
 	children := []*structure.Entry{bigDir, smallDir}
 
 	getSize := func(e *structure.Entry) int64 { return e.TotalStats.Total() }
-	_, blocks := Treemap(60, 30, children, getSize, 0)
+	_, blocks := Treemap(60, 30, children, getSize, 0, false)
 
 	// topIdx values for top-level blocks must be contiguous and match their
 	// position among top-level blocks. This invariant lets keyboard navigation
@@ -203,7 +204,7 @@ func TestTreemapNestedPrealloc(t *testing.T) {
 
 	getSize := func(e *structure.Entry) int64 { return e.TotalStats.Total() }
 	// Use a large canvas so nesting is allowed.
-	view, blocks := Treemap(40, 20, []*structure.Entry{parent}, getSize, 0)
+	view, blocks := Treemap(40, 20, []*structure.Entry{parent}, getSize, 0, false)
 	if view == "" {
 		t.Fatal("Treemap returned empty view")
 	}
@@ -228,5 +229,189 @@ func TestTreemapNestedPrealloc(t *testing.T) {
 	}
 	if !hasA || !hasB || !hasC {
 		t.Fatalf("expected nested a.go/b.go/c.go blocks, got a=%v b=%v c=%v", hasA, hasB, hasC)
+	}
+}
+
+func TestLangColorStable(t *testing.T) {
+	c1 := langColor("Go")
+	c2 := langColor("Go")
+	if c1 != c2 {
+		t.Fatalf("expected stable color for Go, got %v and %v", c1, c2)
+	}
+
+	c3 := langColor("Rust")
+	if c1 == c3 {
+		t.Fatalf("expected different colors for Go and Rust, got %v", c1)
+	}
+
+	if langColor("") == "" {
+		t.Fatal("expected fallback color for empty language")
+	}
+}
+
+func TestEntryPrimaryLang(t *testing.T) {
+	file := &structure.Entry{
+		Path:  "main.go",
+		IsDir: false,
+		StatsByLang: map[string]structure.CodeStats{
+			"Go": {Code: 100},
+		},
+	}
+	if got := entryPrimaryLang(file); got != "Go" {
+		t.Fatalf("expected primary lang Go, got %q", got)
+	}
+
+	dir := &structure.Entry{
+		Path:  "pkg",
+		IsDir: true,
+		StatsByLang: map[string]structure.CodeStats{
+			"Go":   {Code: 100},
+			"JSON": {Code: 10},
+		},
+	}
+	if got := entryPrimaryLang(dir); got != "Go" {
+		t.Fatalf("expected primary lang Go for dir, got %q", got)
+	}
+
+	empty := &structure.Entry{Path: "empty", IsDir: true}
+	if got := entryPrimaryLang(empty); got != "" {
+		t.Fatalf("expected empty primary lang, got %q", got)
+	}
+}
+
+func TestTreemapLanguageColorMode(t *testing.T) {
+	goDir := &structure.Entry{
+		Path:  "gocode",
+		IsDir: true,
+		StatsByLang: map[string]structure.CodeStats{
+			"Go": {Code: 500},
+		},
+		Child: []*structure.Entry{
+			{Path: "a.go", IsDir: false, StatsByLang: map[string]structure.CodeStats{"Go": {Code: 300}}},
+			{Path: "b.go", IsDir: false, StatsByLang: map[string]structure.CodeStats{"Go": {Code: 200}}},
+		},
+	}
+	jsFile := &structure.Entry{
+		Path:        "app.js",
+		IsDir:       false,
+		StatsByLang: map[string]structure.CodeStats{"JavaScript": {Code: 100}},
+	}
+	children := []*structure.Entry{goDir, jsFile}
+
+	getSize := func(e *structure.Entry) int64 {
+		var total int64
+		for _, s := range e.StatsByLang {
+			total += s.Total()
+		}
+		return total
+	}
+
+	_, blocks := Treemap(60, 30, children, getSize, 0, true)
+
+	var goFileColor, goDirColor, jsColor lipgloss.Color
+	foundGoFile, foundGoDir, foundJS := false, false, false
+	for _, b := range blocks {
+		if b.entry == nil {
+			continue
+		}
+		lang := entryPrimaryLang(b.entry)
+		switch lang {
+		case "Go":
+			if b.entry.IsDir {
+				goDirColor = b.color
+				foundGoDir = true
+			} else {
+				goFileColor = b.color
+				foundGoFile = true
+			}
+		case "JavaScript":
+			jsColor = b.color
+			foundJS = true
+		}
+	}
+	if !foundGoFile || !foundGoDir || !foundJS {
+		t.Fatalf("expected Go file, Go dir and JavaScript tiles, foundGoFile=%v foundGoDir=%v foundJS=%v", foundGoFile, foundGoDir, foundJS)
+	}
+	if goFileColor == jsColor || goDirColor == jsColor {
+		t.Fatalf("expected Go and JavaScript colors to differ, got goFile=%v goDir=%v js=%v", goFileColor, goDirColor, jsColor)
+	}
+	if goFileColor == goDirColor {
+		t.Fatalf("expected directory tile to be shaded differently from file tile, got %v", goFileColor)
+	}
+}
+
+func TestTreemapLegend(t *testing.T) {
+	goFile := &structure.Entry{
+		Path:        "a.go",
+		IsDir:       false,
+		StatsByLang: map[string]structure.CodeStats{"Go": {Code: 100}},
+	}
+	jsFile := &structure.Entry{
+		Path:        "b.js",
+		IsDir:       false,
+		StatsByLang: map[string]structure.CodeStats{"JavaScript": {Code: 50}},
+	}
+	blocks := []treemapBlock{
+		{entry: goFile, color: langColor("Go")},
+		{entry: jsFile, color: langColor("JavaScript")},
+	}
+
+	getSize := func(e *structure.Entry) int64 { return e.TotalStats.Total() }
+	legend := buildTreemapLegend(blocks, 6, getSize)
+	if legend == "" {
+		t.Fatal("expected non-empty legend")
+	}
+	if !strings.Contains(legend, "Go") || !strings.Contains(legend, "JavaScript") {
+		t.Fatalf("expected legend to contain Go and JavaScript, got:\n%s", legend)
+	}
+}
+
+func TestTreemapLegendWidthMatchesTotal(t *testing.T) {
+	goDir := &structure.Entry{
+		Path:  "gocode",
+		IsDir: true,
+		StatsByLang: map[string]structure.CodeStats{
+			"Go": {Code: 500},
+		},
+		Child: []*structure.Entry{
+			{Path: "a.go", IsDir: false, StatsByLang: map[string]structure.CodeStats{"Go": {Code: 300}}},
+			{Path: "b.go", IsDir: false, StatsByLang: map[string]structure.CodeStats{"Go": {Code: 200}}},
+		},
+	}
+	jsFile := &structure.Entry{
+		Path:        "app.js",
+		IsDir:       false,
+		StatsByLang: map[string]structure.CodeStats{"JavaScript": {Code: 100}},
+	}
+	children := []*structure.Entry{goDir, jsFile}
+
+	getSize := func(e *structure.Entry) int64 {
+		var total int64
+		for _, s := range e.StatsByLang {
+			total += s.Total()
+		}
+		return total
+	}
+
+	totalW := 80
+	showLegend := totalW > treemapLegendTotalWidth+minTreemapWidthWithoutLegend
+	canvasW := totalW
+	if showLegend {
+		canvasW -= treemapLegendTotalWidth
+	}
+
+	view, blocks := Treemap(canvasW, 20, children, getSize, 0, true)
+	if showLegend {
+		legend := buildTreemapLegend(blocks, 20, getSize)
+		combined := lipgloss.JoinHorizontal(lipgloss.Top, view, legend)
+		got := lipgloss.Width(combined)
+		if got != totalW {
+			t.Fatalf("expected combined width %d, got %d", totalW, got)
+		}
+	} else {
+		got := lipgloss.Width(view)
+		if got != totalW {
+			t.Fatalf("expected treemap width %d, got %d", totalW, got)
+		}
 	}
 }
