@@ -11,24 +11,25 @@ func (bk bindingKey) String() string {
 }
 
 const (
-	backspace        bindingKey = "backspace"
-	quit             bindingKey = "q"
-	cancel           bindingKey = "ctrl+c"
-	escape           bindingKey = "esc"
-	enter            bindingKey = "enter"
-	editFile         bindingKey = "e"
-	quickSearch      bindingKey = "/"
-	globalSearch     bindingKey = "ctrl+p"
-	toggleChart      bindingKey = "ctrl+w"
-	toggleLangFilter bindingKey = "tab"
-	toggleLangSelect bindingKey = "ctrl+l"
-	toggleHelp       bindingKey = "?"
-	toggleTree       bindingKey = "t"
-	toggleTreemap    bindingKey = "m"
-	cycleSortColumn  bindingKey = "s"
-	toggleSortOrder  bindingKey = "S"
-	left             bindingKey = "left"
-	right            bindingKey = "right"
+	backspace          bindingKey = "backspace"
+	quit               bindingKey = "q"
+	cancel             bindingKey = "ctrl+c"
+	escape             bindingKey = "esc"
+	enter              bindingKey = "enter"
+	editFile           bindingKey = "e"
+	quickSearch        bindingKey = "/"
+	globalSearch       bindingKey = "ctrl+p"
+	toggleChart        bindingKey = "ctrl+w"
+	toggleLangFilter   bindingKey = "tab"
+	toggleLangSelect   bindingKey = "ctrl+l"
+	toggleHelp         bindingKey = "?"
+	toggleTree         bindingKey = "t"
+	toggleTreemap      bindingKey = "m"
+	toggleTreemapColor bindingKey = "c"
+	cycleSortColumn    bindingKey = "s"
+	toggleSortOrder    bindingKey = "S"
+	left               bindingKey = "left"
+	right              bindingKey = "right"
 )
 
 var toggleHelpBinding = key.NewBinding(
@@ -109,6 +110,13 @@ var dirsKeyMap = [][]key.Binding{
 			key.WithHelp(
 				bindKeyStyle.Render(toggleTreemap.String()),
 				helpDescStyle.Render(" - Toggle treemap"),
+			),
+		),
+		key.NewBinding(
+			key.WithKeys(toggleTreemapColor.String()),
+			key.WithHelp(
+				bindKeyStyle.Render(toggleTreemapColor.String()),
+				helpDescStyle.Render(" - Toggle treemap color mode"),
 			),
 		),
 		key.NewBinding(
