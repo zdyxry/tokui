@@ -2,6 +2,7 @@ package render
 
 import (
 	"path/filepath"
+	"strings"
 
 	"github.com/zdyxry/tokui/structure"
 )
@@ -96,4 +97,44 @@ func (n *Navigation) AbsPathFromSelectedRow(selectedRow []string) string {
 	}
 
 	return ""
+}
+
+// NavigateToPath navigates to the parent directory of the given relative path
+// and returns the target entry (file or directory) located at that path.
+// The returned entry can be used by the caller to position the cursor.
+// If relPath is empty or ".", the root entry is returned.
+func (n *Navigation) NavigateToPath(relPath string) *structure.Entry {
+	n.entry = n.tree.Root()
+	n.entryStack = &entryStack{}
+	n.cursor = 0
+
+	relPath = strings.TrimSpace(relPath)
+	relPath = strings.TrimPrefix(relPath, "./")
+	if relPath == "" || relPath == "." {
+		return n.entry
+	}
+
+	localPath := filepath.FromSlash(relPath)
+	parts := strings.Split(localPath, string(filepath.Separator))
+
+	for i, part := range parts {
+		if part == "" {
+			continue
+		}
+
+		if i == len(parts)-1 {
+			// Last component can be a file or a directory.
+			return n.entry.GetChild(part)
+		}
+
+		child := n.entry.GetChild(part)
+		if child == nil || !child.IsDir {
+			return nil
+		}
+		n.entryStack.push(&stackItem{entry: n.entry, cursor: 0})
+		n.entry = child
+		n.cursor = 0
+	}
+
+	return n.entry
 }
