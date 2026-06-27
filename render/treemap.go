@@ -671,9 +671,10 @@ func buildTreemapLegend(blocks []treemapBlock, height int, getSize func(*structu
 			break
 		}
 		colorBlock := lipgloss.NewStyle().Foreground(it.color).Render("█ ")
-		label := fmtName(it.lang, contentWidth-4)
 		value := fmt.Sprintf("%d", it.count)
-		padding := strings.Repeat(" ", max(0, contentWidth-lipgloss.Width(label)-lipgloss.Width(value)-2))
+		valueWidth := lipgloss.Width(value)
+		label := fmtName(it.lang, max(1, contentWidth-2-valueWidth))
+		padding := strings.Repeat(" ", max(0, contentWidth-lipgloss.Width(label)-valueWidth-2))
 		lines = append(lines, lineStyle.Render(colorBlock+label+padding+value))
 	}
 
