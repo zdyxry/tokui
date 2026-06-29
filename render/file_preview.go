@@ -169,6 +169,14 @@ func (fp *FilePreview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		// Handle viewport navigation keys
+		switch msg.String() {
+		case "home":
+			fp.viewport.YOffset = 0
+			return fp, nil
+		case "end":
+			fp.viewport.YOffset = max(0, fp.viewport.TotalLineCount()-fp.viewport.VisibleLineCount())
+			return fp, nil
+		}
 		fp.viewport, cmd = fp.viewport.Update(msg)
 	case tea.MouseMsg:
 		// Forward mouse events (e.g. scroll wheel) to the viewport.
