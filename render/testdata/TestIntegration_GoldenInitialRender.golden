@@ -1,0 +1,40 @@
+[?25l[?2004h    Name       Languages               Code        Comments    Blanks      Total ▼     % of Parent                      
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━                   
+📂  render     Go                      200         40          20          260         50.49 %                          
+📂  cmd        Go                      150         30          15          195         37.86 %                          
+💻  main.go    Go                      30          5           5           40          7.77 %                           
+📜  README.md  Markdown                20          0           0           20          3.88 %                           
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+ tokei test-version [;m[0m PATH [;m[0m project                         [;m[0m MODE [;m[0m Nav [;m[0m LANG [;m[0m All [;m[0m CODE [;m[0m 400 (77%) [;m[0m TOTAL [;m[0m 515 
+↑/k  - Move up • e  - Open file in editor • ↓/j  - Move down • g/home  - Go to top • G/end  - Go to bottom • ?  - Toggle[120D[2K[?2004l[?25h[?1002l[?1003l[?1006l

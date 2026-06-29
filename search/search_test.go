@@ -120,3 +120,83 @@ func TestFind_HighlightIndexes(t *testing.T) {
 		t.Error("expected non-empty matched indexes")
 	}
 }
+
+func TestBuildIndex_Nil(t *testing.T) {
+	idx := BuildIndex(nil)
+	if idx == nil {
+		t.Fatal("expected non-nil index")
+	}
+	if idx.Items() != 0 {
+		t.Errorf("expected empty index, got %d items", idx.Items())
+	}
+}
+
+func TestBuildIndex_DeeplyNested(t *testing.T) {
+	root := structure.NewDirEntry("/project")
+	a := structure.NewDirEntry(filepath.Join("/project", "a"))
+	b := structure.NewDirEntry(filepath.Join("/project", "a", "b"))
+	c := structure.NewDirEntry(filepath.Join("/project", "a", "b", "c"))
+	root.AddChild(a)
+	a.AddChild(b)
+	b.AddChild(c)
+	c.AddChild(structure.NewFileEntry(filepath.Join("/project", "a", "b", "c", "deep.go"), map[string]structure.CodeStats{
+		"Go": {Code: 1},
+	}))
+
+	idx := BuildIndex(root)
+	expected := []string{".", "a", "a/b", "a/b/c", "a/b/c/deep.go"}
+	paths := make(map[string]bool)
+	for _, item := range idx.items {
+		paths[item.Path] = true
+	}
+	for _, p := range expected {
+		if !paths[p] {
+			t.Errorf("expected path %q in index", p)
+		}
+	}
+}
+
+func TestFind_NilIndex(t *testing.T) {
+	var idx *Index
+	if got := idx.Find("foo"); got != nil {
+		t.Errorf("expected nil, got %v", got)
+	}
+}
+
+func TestFind_EmptyIndex(t *testing.T) {
+	idx := &Index{}
+	if got := idx.Find("foo"); got != nil {
+		t.Errorf("expected nil, got %v", got)
+	}
+}
+
+func TestFind_WhitespaceOnly(t *testing.T) {
+	root := buildTestTree()
+	idx := BuildIndex(root)
+	if got := idx.Find("   "); got != nil {
+		t.Errorf("expected nil for whitespace-only query, got %v", got)
+	}
+}
+
+func TestItems_NilIndex(t *testing.T) {
+	var idx *Index
+	if got := idx.Items(); got != 0 {
+		t.Errorf("expected 0, got %d", got)
+	}
+}
+
+func TestFind_FuzzyMultipleResults(t *testing.T) {
+	root := buildTestTree()
+	idx := BuildIndex(root)
+
+	matches := idx.Find("go")
+	if len(matches) < 2 {
+		t.Fatalf("expected multiple matches, got %d", len(matches))
+	}
+
+	for _, m := range matches {
+		if len(m.MatchedIndexes) == 0 {
+			t.Errorf("expected matched indexes for %q", m.Item.Path)
+		}
+	}
+}

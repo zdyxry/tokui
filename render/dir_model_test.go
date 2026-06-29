@@ -1,6 +1,9 @@
 package render
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -591,5 +594,377 @@ func TestDirModelGlobalSearchPgDownNoMatches(t *testing.T) {
 
 	if dm.searchCursor != 0 {
 		t.Errorf("expected cursor to stay at 0 with no matches, got %d", dm.searchCursor)
+	}
+}
+
+func TestDirModelLanguageSelectOverlay(t *testing.T) {
+	dm := newTestDirModel()
+	dm.Update(ScanFinished{})
+
+	if len(dm.languages) != 2 {
+		t.Fatalf("expected 2 languages, got %d", len(dm.languages))
+	}
+	if dm.languages[0] != "Go" || dm.languages[1] != "Python" {
+		t.Errorf("languages = %v, want [Go Python]", dm.languages)
+	}
+
+	dm.Update(tea.KeyMsg{Type: tea.KeyCtrlL})
+	if dm.mode != SELECT_LANG {
+		t.Fatalf("expected SELECT_LANG mode, got %v", dm.mode)
+	}
+	if !dm.selectMode {
+		t.Error("expected selectMode to be true")
+	}
+	if dm.selectIndex != 0 {
+		t.Errorf("expected selectIndex 0, got %d", dm.selectIndex)
+	}
+
+	dm.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if dm.selectIndex != 1 {
+		t.Errorf("after down: selectIndex = %d, want 1", dm.selectIndex)
+	}
+	dm.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if dm.selectIndex != 0 {
+		t.Errorf("after up: selectIndex = %d, want 0", dm.selectIndex)
+	}
+
+	// Boundary at the top.
+	dm.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if dm.selectIndex != 0 {
+		t.Errorf("top boundary: selectIndex = %d, want 0", dm.selectIndex)
+	}
+
+	// Boundary at the bottom.
+	dm.selectIndex = len(dm.languages) - 1
+	dm.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if dm.selectIndex != len(dm.languages)-1 {
+		t.Errorf("bottom boundary: selectIndex = %d, want %d", dm.selectIndex, len(dm.languages)-1)
+	}
+
+	// Toggle selection with space.
+	dm.selectIndex = 0 // Go
+	dm.Update(tea.KeyMsg{Type: tea.KeySpace})
+	if !dm.selectedLangs["Go"] {
+		t.Error("expected Go to be selected")
+	}
+	dm.Update(tea.KeyMsg{Type: tea.KeySpace})
+	if dm.selectedLangs["Go"] {
+		t.Error("expected Go to be deselected")
+	}
+
+	// Enter applies the filter and exits select mode.
+	dm.Update(tea.KeyMsg{Type: tea.KeySpace})
+	dm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if dm.mode != READY {
+		t.Errorf("expected READY after enter, got %v", dm.mode)
+	}
+	if !dm.selectedLangs["Go"] {
+		t.Error("expected Go to remain selected")
+	}
+	if len(dm.dirsTable.Rows()) != 2 {
+		t.Errorf("expected 2 Go rows, got %d", len(dm.dirsTable.Rows()))
+	}
+
+	// Escape closes language select without applying the latest selection.
+	dm.Update(tea.KeyMsg{Type: tea.KeyCtrlL})
+	dm.selectIndex = 1 // Python
+	dm.Update(tea.KeyMsg{Type: tea.KeySpace})
+	dm.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if dm.mode != READY {
+		t.Errorf("expected READY after escape, got %v", dm.mode)
+	}
+	if dm.selectMode {
+		t.Error("expected selectMode to be false")
+	}
+	// The previously applied Go filter is still in effect.
+	if len(dm.dirsTable.Rows()) != 2 {
+		t.Errorf("expected 2 rows after escape, got %d", len(dm.dirsTable.Rows()))
+	}
+}
+
+func TestDirModelInputMode(t *testing.T) {
+	dm := newTestDirModel()
+	dm.Update(ScanFinished{})
+
+	dm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	if dm.mode != INPUT {
+		t.Fatalf("expected INPUT mode, got %v", dm.mode)
+	}
+	nf := dm.filters[filter.NameFilterID].(*filter.NameFilter)
+	if !nf.IsEnabled() {
+		t.Error("expected name filter to be enabled")
+	}
+
+	dm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	if len(dm.dirsTable.Rows()) != 2 {
+		t.Errorf("expected 2 rows matching 'o', got %d", len(dm.dirsTable.Rows()))
+	}
+
+	dm.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if dm.mode != READY {
+		t.Errorf("expected READY after escape, got %v", dm.mode)
+	}
+	if nf.IsEnabled() {
+		t.Error("expected name filter to be disabled")
+	}
+	if len(dm.dirsTable.Rows()) != 3 {
+		t.Errorf("expected 3 rows after clearing filter, got %d", len(dm.dirsTable.Rows()))
+	}
+}
+
+func TestDirModelExitSearchMode(t *testing.T) {
+	dm := newTestDirModel()
+	dm.Update(ScanFinished{})
+
+	dm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	dm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	if len(dm.dirsTable.Rows()) == 3 {
+		t.Fatal("expected filter to reduce rows")
+	}
+
+	dm.ExitSearchMode()
+	if dm.mode != READY {
+		t.Errorf("expected READY, got %v", dm.mode)
+	}
+	nf := dm.filters[filter.NameFilterID].(*filter.NameFilter)
+	if nf.IsEnabled() {
+		t.Error("expected name filter to be disabled")
+	}
+	if len(dm.dirsTable.Rows()) != 3 {
+		t.Errorf("expected 3 rows, got %d", len(dm.dirsTable.Rows()))
+	}
+}
+
+func TestDirModelChartOverlay(t *testing.T) {
+	dm := newTestDirModel()
+	dm.Update(ScanFinished{})
+	dm.width = 80
+	dm.height = 24
+
+	if dm.showCart {
+		t.Fatal("expected chart to start hidden")
+	}
+
+	dm.Update(tea.KeyMsg{Type: tea.KeyCtrlW})
+	if !dm.showCart {
+		t.Error("expected chart to be shown")
+	}
+
+	chart := dm.viewChart()
+	if chart == "" {
+		t.Error("expected non-empty chart view")
+	}
+	if !strings.Contains(chart, "Go") && !strings.Contains(chart, "Python") {
+		t.Error("expected chart to contain language labels")
+	}
+
+	dm.Update(tea.KeyMsg{Type: tea.KeyCtrlW})
+	if dm.showCart {
+		t.Error("expected chart to be hidden after toggle")
+	}
+}
+
+func TestDirModelPreviewLifecycle(t *testing.T) {
+	dm := newTestDirModel()
+	dm.Update(ScanFinished{})
+	dm.width = 80
+	dm.height = 24
+
+	dir := t.TempDir()
+	p := filepath.Join(dir, "x.txt")
+	if err := os.WriteFile(p, []byte("hello"), 0644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	if dm.IsInPreviewMode() {
+		t.Error("expected preview mode to start false")
+	}
+
+	dm.ShowFilePreview(p)
+	if !dm.IsInPreviewMode() {
+		t.Error("expected preview mode to be true")
+	}
+	if dm.mode != PREVIEW {
+		t.Errorf("expected PREVIEW mode, got %v", dm.mode)
+	}
+	if dm.filePreview == nil {
+		t.Fatal("expected filePreview to be created")
+	}
+
+	dm.ClosePreview()
+	if dm.IsInPreviewMode() {
+		t.Error("expected preview mode to be false after close")
+	}
+	if dm.mode != READY {
+		t.Errorf("expected READY mode, got %v", dm.mode)
+	}
+	if dm.filePreview != nil {
+		t.Error("expected filePreview to be cleared")
+	}
+}
+
+func TestDirModelSortKeyBindings(t *testing.T) {
+	dm := newTestDirModel()
+	dm.Update(ScanFinished{})
+
+	initial := dm.sortState.Key
+	dm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	if dm.sortState.Key == initial {
+		t.Error("expected 's' to cycle sort column")
+	}
+
+	dm.sortState = SortState{Key: SortByTotal, Desc: true}
+	dm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'S'}})
+	if dm.sortState.Desc != false {
+		t.Errorf("expected 'S' to toggle sort order, got Desc=%v", dm.sortState.Desc)
+	}
+	if dm.sortState.Key != SortByTotal {
+		t.Errorf("expected sort key to stay %q, got %q", SortByTotal, dm.sortState.Key)
+	}
+}
+
+func TestDirModelModeToggles(t *testing.T) {
+	dm := newTestDirModel()
+	dm.Update(ScanFinished{})
+
+	if dm.treeMode {
+		t.Fatal("expected tree mode to start disabled")
+	}
+
+	dm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	if !dm.treeMode {
+		t.Error("expected tree mode enabled")
+	}
+
+	dm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+	if !dm.treemapMode {
+		t.Error("expected treemap mode enabled")
+	}
+	if dm.treeMode {
+		t.Error("expected tree mode disabled when treemap enabled")
+	}
+
+	dm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	if !dm.treeMode {
+		t.Error("expected tree mode re-enabled")
+	}
+	if dm.treemapMode {
+		t.Error("expected treemap mode disabled")
+	}
+}
+
+func TestDirModelMouseHelpers(t *testing.T) {
+	dm := newTestDirModel()
+
+	dm.overlayBounds = overlayBounds{kind: "preview", x: 10, y: 5, w: 40, h: 20}
+	cases := []struct {
+		x, y int
+		want bool
+	}{
+		{10, 5, true},
+		{49, 24, true},
+		{9, 5, false},
+		{50, 5, false},
+		{10, 4, false},
+		{10, 25, false},
+	}
+	for _, tc := range cases {
+		got := dm.isInsideOverlay(tc.x, tc.y)
+		if got != tc.want {
+			t.Errorf("isInsideOverlay(%d,%d) = %v, want %v", tc.x, tc.y, got, tc.want)
+		}
+		if !dm.isInsidePreviewBox(tc.x, tc.y) && tc.want {
+			t.Errorf("isInsidePreviewBox(%d,%d) should be true", tc.x, tc.y)
+		}
+	}
+
+	dm.overlayBounds.kind = "chart"
+	if !dm.isInsideChartBox(15, 10) {
+		t.Error("expected inside chart box")
+	}
+	if dm.isInsidePreviewBox(15, 10) {
+		t.Error("expected not inside preview box")
+	}
+
+	dm.overlayBounds.kind = "langselect"
+	if !dm.isInsideLangSelectBox(15, 10) {
+		t.Error("expected inside language select box")
+	}
+}
+
+func TestDirModelLangSelectIndexAtY(t *testing.T) {
+	dm := newTestDirModel()
+	dm.languages = []string{"A", "B", "C", "D", "E"}
+
+	t.Run("no scroll offset", func(t *testing.T) {
+		dm.overlayBounds = overlayBounds{kind: "langselect", x: 0, y: 5, w: 20, h: 10, langStart: 0, langEnd: 3}
+		if got := dm.langSelectIndexAtY(5 + 1); got != -1 { // title line
+			t.Errorf("title line = %d, want -1", got)
+		}
+		if got := dm.langSelectIndexAtY(5 + 3); got != 0 { // first list item
+			t.Errorf("first item = %d, want 0", got)
+		}
+		if got := dm.langSelectIndexAtY(5 + 4); got != 1 {
+			t.Errorf("second item = %d, want 1", got)
+		}
+		if got := dm.langSelectIndexAtY(5 + 6); got != -1 { // past last visible item
+			t.Errorf("past end = %d, want -1", got)
+		}
+	})
+
+	t.Run("with scroll offset", func(t *testing.T) {
+		dm.overlayBounds = overlayBounds{kind: "langselect", x: 0, y: 5, w: 20, h: 10, langStart: 2, langEnd: 5}
+		if got := dm.langSelectIndexAtY(5 + 2); got != -1 { // "..." line
+			t.Errorf("ellipsis line = %d, want -1", got)
+		}
+		if got := dm.langSelectIndexAtY(5 + 4); got != 2 { // first visible item
+			t.Errorf("first visible item = %d, want 2", got)
+		}
+		if got := dm.langSelectIndexAtY(5 + 6); got != 4 { // last visible item
+			t.Errorf("last visible item = %d, want 4", got)
+		}
+	})
+}
+
+func TestDirModelTableRowAtY(t *testing.T) {
+	dm := newTestDirModel()
+	dm.Update(ScanFinished{})
+	dm.updateSize(120, 24)
+	dm.lastTableView = dm.dirsTable.View()
+
+	cursorLine := dm.findCursorLineInView(dm.lastTableView)
+	if cursorLine < 0 {
+		t.Fatalf("cursor line not found in view:\n%s", dm.lastTableView)
+	}
+
+	y := tableHeaderHeight + cursorLine
+	got := dm.tableRowAtY(y)
+	want := dm.dirsTable.Cursor()
+	if got != want {
+		t.Errorf("tableRowAtY(%d) = %d, want %d", y, got, want)
+	}
+
+	if dm.tableRowAtY(0) != -1 {
+		t.Error("expected header Y to return -1")
+	}
+	if dm.tableRowAtY(1000) != -1 {
+		t.Error("expected out-of-range Y to return -1")
+	}
+}
+
+func TestDirModelFindCursorLineInView(t *testing.T) {
+	dm := newTestDirModel()
+	dm.Update(ScanFinished{})
+	dm.updateSize(120, 24)
+
+	view := dm.dirsTable.View()
+	line := dm.findCursorLineInView(view)
+	if line < 0 {
+		t.Fatalf("findCursorLineInView returned %d", line)
+	}
+
+	lines := strings.Split(view, "\n")
+	if line >= len(lines)-tableHeaderHeight {
+		t.Errorf("cursor line %d out of range for view with %d data lines", line, len(lines)-tableHeaderHeight)
 	}
 }

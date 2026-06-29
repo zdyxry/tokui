@@ -272,7 +272,7 @@ func (dm *DirModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// If in preview mode, handle preview-specific keys
 		if dm.mode == PREVIEW && dm.filePreview != nil {
-			key := strings.ToLower(msg.String())
+			key := parseBindingKey(msg).String()
 			if key == "q" || key == "esc" {
 				// Close file preview
 				dm.mode = READY
@@ -461,7 +461,7 @@ func (dm *DirModel) handleKeyBindings(msg tea.KeyMsg) (tea.Cmd, bool) {
 		return nil, false
 	}
 
-	bk := bindingKey(strings.ToLower(msg.String()))
+	bk := parseBindingKey(msg)
 
 	// Language select mode
 	if dm.mode == SELECT_LANG {
@@ -493,10 +493,10 @@ func (dm *DirModel) handleKeyBindings(msg tea.KeyMsg) (tea.Cmd, bool) {
 			dm.selectMode = false
 			dm.updateTableData()
 			return nil, true
+		default:
+			return nil, true
 		}
 	}
-
-	bk = bindingKey(strings.ToLower(msg.String()))
 
 	// Quick search (/ key): activate name filter mode
 	if bk == quickSearch {

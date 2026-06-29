@@ -1,0 +1,2 @@
+# Golden files used by teatest must keep their exact byte contents.
+*.golden -text
