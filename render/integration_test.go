@@ -286,6 +286,26 @@ func TestIntegration_QuitFromReadyMode(t *testing.T) {
 	}
 }
 
+func TestIntegration_ToggleTreemapColorMode(t *testing.T) {
+	tm := startIntegrationApp(t, false, false)
+
+	// Switch to treemap mode.
+	sendKey(t, tm, "m")
+	waitForAllOutputs(t, tm, "Treemap", "cmd")
+
+	// Toggle language color mode; the legend panel should appear.
+	sendKey(t, tm, "c")
+	waitForAllOutputs(t, tm, "Languages", "Go", "Markdown")
+
+	// Toggle back to directory color mode; the legend should disappear.
+	sendKey(t, tm, "c")
+	teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
+		return !bytes.Contains(bts, []byte("Languages"))
+	}, teatest.WithDuration(5*time.Second), teatest.WithCheckInterval(50*time.Millisecond))
+
+	quitApp(t, tm)
+}
+
 func TestIntegration_GoldenInitialRender(t *testing.T) {
 	tm := startIntegrationApp(t, false, false)
 

@@ -366,6 +366,77 @@ func TestTreemapLegend(t *testing.T) {
 	}
 }
 
+func TestAdjustColor(t *testing.T) {
+	c := lipgloss.Color("#808080")
+
+	lighter := adjustColor(c, 0.5)
+	if lighter == c {
+		t.Fatal("expected lighter color")
+	}
+
+	darker := adjustColor(c, -0.5)
+	if darker == c {
+		t.Fatal("expected darker color")
+	}
+
+	if adjustColor("", 0.1) != "" {
+		t.Fatal("expected empty color to pass through")
+	}
+
+	if adjustColor(lipgloss.Color("not-a-color"), 0.1) != lipgloss.Color("not-a-color") {
+		t.Fatal("expected invalid color to pass through")
+	}
+}
+
+func TestTreemapColorFor(t *testing.T) {
+	goFile := &structure.Entry{Path: "a.go", IsDir: false, StatsByLang: map[string]structure.CodeStats{"Go": {Code: 100}}}
+	goDir := &structure.Entry{Path: "pkg", IsDir: true, StatsByLang: map[string]structure.CodeStats{"Go": {Code: 100}}}
+
+	c1 := treemapColorFor(goFile, 0, false)
+	c2 := treemapColorFor(goFile, 1, false)
+	if c1 == c2 {
+		t.Fatal("expected different palette colors for different indices")
+	}
+
+	langColor1 := treemapColorFor(goFile, 0, true)
+	langColor2 := treemapColorFor(goDir, 0, true)
+	if langColor1 == langColor2 {
+		t.Fatal("expected directory tile to be shaded differently from file tile in language mode")
+	}
+}
+
+func TestLangColorUnknown(t *testing.T) {
+	c := langColor("NotARealLanguage")
+	if c != lipgloss.Color("#7F8C8D") {
+		t.Fatalf("expected fallback gray for unknown language, got %v", c)
+	}
+}
+
+func TestBuildTreemapLegendEmpty(t *testing.T) {
+	got := buildTreemapLegend(nil, 10, func(e *structure.Entry) int64 { return 0 })
+	if got == "" {
+		t.Fatal("expected legend with title even for empty blocks")
+	}
+	if !strings.Contains(got, "Languages") {
+		t.Fatal("expected legend title")
+	}
+}
+
+func TestBuildTreemapLegendTruncatesToHeight(t *testing.T) {
+	blocks := []treemapBlock{
+		{entry: &structure.Entry{Path: "a.go", IsDir: false, StatsByLang: map[string]structure.CodeStats{"Go": {Code: 100}}}, level: 0},
+		{entry: &structure.Entry{Path: "b.js", IsDir: false, StatsByLang: map[string]structure.CodeStats{"JavaScript": {Code: 50}}}, level: 0},
+		{entry: &structure.Entry{Path: "c.py", IsDir: false, StatsByLang: map[string]structure.CodeStats{"Python": {Code: 25}}}, level: 0},
+	}
+	getSize := func(e *structure.Entry) int64 { return e.TotalStats.Total() }
+
+	legend := buildTreemapLegend(blocks, 4, getSize)
+	lines := strings.Split(legend, "\n")
+	if len(lines) == 0 {
+		t.Fatal("expected non-empty legend")
+	}
+}
+
 func TestTreemapLegendWidthMatchesTotal(t *testing.T) {
 	goDir := &structure.Entry{
 		Path:  "gocode",

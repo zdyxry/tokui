@@ -598,7 +598,6 @@ func TestDirModelGlobalSearchPgDownNoMatches(t *testing.T) {
 	}
 }
 
-<<<<<<< HEAD
 func TestDirModelLanguageSelectOverlay(t *testing.T) {
 	dm := newTestDirModel()
 	dm.Update(ScanFinished{})
