@@ -43,8 +43,6 @@ const (
 	toggleTreemapColor bindingKey = "c"
 	cycleSortColumn    bindingKey = "s"
 	toggleSortOrder    bindingKey = "S"
-	left               bindingKey = "left"
-	right              bindingKey = "right"
 )
 
 var toggleHelpBinding = key.NewBinding(
