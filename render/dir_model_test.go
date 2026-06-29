@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/zdyxry/tokui/filter"
+	"github.com/zdyxry/tokui/provider"
 	"github.com/zdyxry/tokui/structure"
 )
 
@@ -68,7 +69,7 @@ func newTestDirModel() *DirModel {
 
 	root.AggregateStats()
 
-	dm := NewDirModel(NewCodeNavigation(structure.NewTree(root)), "", false, false)
+	dm := NewDirModel(NewCodeNavigation(structure.NewTree(root)), provider.Info{Name: "test"}, false, false)
 	dm.languages = []string{"Go", "Python"}
 	dm.langFilterIdx = -1
 	dm.selectedLangs = make(map[string]bool)
@@ -305,7 +306,7 @@ func newTestNestedDirModel() *DirModel {
 
 	root.AggregateStats()
 
-	dm := NewDirModel(NewCodeNavigation(structure.NewTree(root)), "", false, false)
+	dm := NewDirModel(NewCodeNavigation(structure.NewTree(root)), provider.Info{Name: "test"}, false, false)
 	dm.languages = []string{"Go", "Python"}
 	dm.langFilterIdx = -1
 	dm.selectedLangs = make(map[string]bool)
@@ -506,7 +507,7 @@ func TestViewModelPreviewQClosesPreviewWithoutQuitting(t *testing.T) {
 
 func TestViewModelInputQFiltersWithoutQuitting(t *testing.T) {
 	testDM := newTestDirModel()
-	dm := NewDirModel(NewCodeNavigation(structure.NewTree(testDM.nav.Entry())), "", false, false)
+	dm := NewDirModel(NewCodeNavigation(structure.NewTree(testDM.nav.Entry())), provider.Info{Name: "test"}, false, false)
 	dm.mode = INPUT
 	dm.filters.ToggleFilter(filter.NameFilterID)
 	vm := NewViewModel(nil, dm)

@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/exp/teatest"
 	"github.com/muesli/termenv"
+	"github.com/zdyxry/tokui/provider"
 	"github.com/zdyxry/tokui/structure"
 )
 
@@ -64,7 +65,7 @@ func newIntegrationViewModel(t *testing.T, treeMode, treemapMode bool) *ViewMode
 	t.Helper()
 
 	nav := NewCodeNavigation(integrationTree())
-	dm := NewDirModel(nav, "test-version", treeMode, treemapMode)
+	dm := NewDirModel(nav, provider.Info{Name: "test", Version: "test-version"}, treeMode, treemapMode)
 	vm := NewViewModel(nav, dm)
 	// Synchronization channel used by startIntegrationApp to wait until the
 	// initial ScanFinished message has been processed.

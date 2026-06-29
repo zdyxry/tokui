@@ -11,9 +11,12 @@ import (
 )
 
 type CodeStats struct {
-	Code     int64
-	Comments int64
-	Blanks   int64
+	Code          int64
+	Comments      int64
+	Blanks        int64
+	Complexity    int64
+	MaxComplexity int64
+	Bytes         int64
 }
 
 func (cs CodeStats) Total() int64 {
@@ -24,6 +27,11 @@ func (cs *CodeStats) Add(other CodeStats) {
 	cs.Code += other.Code
 	cs.Comments += other.Comments
 	cs.Blanks += other.Blanks
+	cs.Complexity += other.Complexity
+	cs.Bytes += other.Bytes
+	if other.MaxComplexity > cs.MaxComplexity {
+		cs.MaxComplexity = other.MaxComplexity
+	}
 }
 
 type Entry struct {

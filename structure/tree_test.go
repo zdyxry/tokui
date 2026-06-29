@@ -5,7 +5,20 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/zdyxry/tokui/provider"
+	"github.com/zdyxry/tokui/tokei"
 )
+
+func mustParseTokei(t *testing.T, data []byte) provider.Result {
+	t.Helper()
+	p := tokei.New()
+	result, err := p.ParseStdin(data)
+	if err != nil {
+		t.Fatalf("ParseStdin failed: %v", err)
+	}
+	return result
+}
 
 func TestAddFileToTree_SingleFile(t *testing.T) {
 	root := NewDirEntry("root")
@@ -125,7 +138,7 @@ func TestAggregateStats_NestedTree(t *testing.T) {
 	}
 }
 
-func TestBuildFromStdin_ValidTokeiJSON(t *testing.T) {
+func TestBuildFromProviderResult_ValidTokeiJSON(t *testing.T) {
 	input := []byte(`{
 		"Go": {
 			"blanks": 1,
@@ -140,24 +153,11 @@ func TestBuildFromStdin_ValidTokeiJSON(t *testing.T) {
 		}
 	}`)
 
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("os.Pipe failed: %v", err)
-	}
-	defer r.Close()
-
-	origStdin := os.Stdin
-	os.Stdin = r
-	defer func() { os.Stdin = origStdin }()
-
-	go func() {
-		defer w.Close()
-		_, _ = w.Write(input)
-	}()
+	result := mustParseTokei(t, input)
 
 	tree := NewTree(nil)
-	if err := tree.BuildFromStdin(); err != nil {
-		t.Fatalf("BuildFromStdin failed: %v", err)
+	if err := tree.BuildFromProviderResult(result, "."); err != nil {
+		t.Fatalf("BuildFromProviderResult failed: %v", err)
 	}
 
 	root := tree.Root()
@@ -174,7 +174,7 @@ func TestBuildFromStdin_ValidTokeiJSON(t *testing.T) {
 	}
 }
 
-func TestBuildFromStdin_NestedTokeiJSON(t *testing.T) {
+func TestBuildFromProviderResult_NestedTokeiJSON(t *testing.T) {
 	input := []byte(`{
 		"project": {
 			"Go": {
@@ -191,24 +191,11 @@ func TestBuildFromStdin_NestedTokeiJSON(t *testing.T) {
 		}
 	}`)
 
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("os.Pipe failed: %v", err)
-	}
-	defer r.Close()
-
-	origStdin := os.Stdin
-	os.Stdin = r
-	defer func() { os.Stdin = origStdin }()
-
-	go func() {
-		defer w.Close()
-		_, _ = w.Write(input)
-	}()
+	result := mustParseTokei(t, input)
 
 	tree := NewTree(nil)
-	if err := tree.BuildFromStdin(); err != nil {
-		t.Fatalf("BuildFromStdin failed: %v", err)
+	if err := tree.BuildFromProviderResult(result, "."); err != nil {
+		t.Fatalf("BuildFromProviderResult failed: %v", err)
 	}
 
 	root := tree.Root()
@@ -217,7 +204,7 @@ func TestBuildFromStdin_NestedTokeiJSON(t *testing.T) {
 	}
 }
 
-func TestBuildFromTokei_Smoke(t *testing.T) {
+func TestBuildFromProvider_Smoke(t *testing.T) {
 	if _, err := exec.LookPath("tokei"); err != nil {
 		t.Skip("tokei binary not available, skipping smoke test")
 	}
@@ -228,8 +215,8 @@ func TestBuildFromTokei_Smoke(t *testing.T) {
 	}
 
 	tree := NewTree(nil)
-	if err := tree.BuildFromTokei(dir); err != nil {
-		t.Fatalf("BuildFromTokei failed: %v", err)
+	if err := tree.BuildFromProvider(tokei.New(), dir); err != nil {
+		t.Fatalf("BuildFromProvider failed: %v", err)
 	}
 
 	root := tree.Root()
@@ -243,6 +230,44 @@ func TestBuildFromTokei_Smoke(t *testing.T) {
 	mainGo := root.GetChild("main.go")
 	if mainGo == nil {
 		t.Fatal("expected main.go file")
+	}
+}
+
+func TestBuildFromResult_ComplexityAndBytes(t *testing.T) {
+	tr := NewTree(NewDirEntry("root"))
+	result := provider.Result{
+		Files: []provider.FileStats{
+			{
+				Path:       "/root/src/main.go",
+				Language:   "Go",
+				Code:       10,
+				Comments:   1,
+				Blanks:     1,
+				Complexity: 5,
+				Bytes:      200,
+			},
+		},
+	}
+
+	if err := tr.buildFromResult(result, "/root"); err != nil {
+		t.Fatalf("buildFromResult failed: %v", err)
+	}
+
+	root := tr.Root()
+	mainGo := root.GetChild("src").GetChild("main.go")
+	if mainGo == nil {
+		t.Fatal("expected src/main.go file")
+	}
+
+	goStats := mainGo.StatsByLang["Go"]
+	if goStats.Complexity != 5 {
+		t.Errorf("expected complexity 5, got %d", goStats.Complexity)
+	}
+	if goStats.MaxComplexity != 5 {
+		t.Errorf("expected max complexity 5, got %d", goStats.MaxComplexity)
+	}
+	if goStats.Bytes != 200 {
+		t.Errorf("expected bytes 200, got %d", goStats.Bytes)
 	}
 }
 

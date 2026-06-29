@@ -1,9 +1,21 @@
 package tokei
 
 import (
-	"os"
 	"testing"
+
+	"github.com/zdyxry/tokui/provider"
 )
+
+func TestProviderInterface(t *testing.T) {
+	p := New()
+	info := p.Info()
+	if info.Name != "tokei" {
+		t.Errorf("expected provider name tokei, got %q", info.Name)
+	}
+	if info.Capabilities != provider.CapLines {
+		t.Errorf("expected CapLines, got %v", info.Capabilities)
+	}
+}
 
 func TestParseReport_DirectFormat(t *testing.T) {
 	data := []byte(`{
@@ -79,7 +91,32 @@ func TestParseReport_InvalidJSON(t *testing.T) {
 	}
 }
 
-func TestAnalyzeFromStdin_ValidInput(t *testing.T) {
+func TestToProviderResult(t *testing.T) {
+	report := LanguageReport{
+		"Go": {
+			Code:     20,
+			Comments: 5,
+			Blanks:   5,
+			Reports: []FileReport{
+				{Name: "main.go", Stats: InnerStats{Code: 20, Comments: 5, Blanks: 5}},
+			},
+		},
+		"Total": {
+			Code: 20,
+		},
+	}
+
+	result := toProviderResult(report)
+	if len(result.Files) != 1 {
+		t.Fatalf("expected 1 file, got %d", len(result.Files))
+	}
+	f := result.Files[0]
+	if f.Path != "main.go" || f.Language != "Go" || f.Code != 20 {
+		t.Errorf("unexpected file stats: %+v", f)
+	}
+}
+
+func TestParseStdin_ValidInput(t *testing.T) {
 	input := []byte(`{
 		"Python": {
 			"blanks": 1,
@@ -94,52 +131,24 @@ func TestAnalyzeFromStdin_ValidInput(t *testing.T) {
 		}
 	}`)
 
-	r, w, err := os.Pipe()
+	p := New()
+	result, err := p.ParseStdin(input)
 	if err != nil {
-		t.Fatalf("os.Pipe failed: %v", err)
-	}
-	defer r.Close()
-
-	origStdin := os.Stdin
-	os.Stdin = r
-	defer func() { os.Stdin = origStdin }()
-
-	go func() {
-		defer w.Close()
-		_, _ = w.Write(input)
-	}()
-
-	report, err := AnalyzeFromStdin()
-	if err != nil {
-		t.Fatalf("AnalyzeFromStdin failed: %v", err)
+		t.Fatalf("ParseStdin failed: %v", err)
 	}
 
-	pyStats, ok := report["Python"]
-	if !ok {
-		t.Fatal("expected Python stats in report")
+	if len(result.Files) != 1 {
+		t.Fatalf("expected 1 file, got %d", len(result.Files))
 	}
-	if pyStats.Code != 5 {
-		t.Errorf("expected Python code 5, got %d", pyStats.Code)
+	f := result.Files[0]
+	if f.Language != "Python" || f.Code != 5 {
+		t.Errorf("unexpected file stats: %+v", f)
 	}
 }
 
-func TestAnalyzeFromStdin_EmptyInput(t *testing.T) {
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("os.Pipe failed: %v", err)
-	}
-	defer r.Close()
-
-	origStdin := os.Stdin
-	os.Stdin = r
-	defer func() { os.Stdin = origStdin }()
-
-	go func() {
-		defer w.Close()
-		_, _ = w.Write([]byte{})
-	}()
-
-	_, err = AnalyzeFromStdin()
+func TestParseStdin_EmptyInput(t *testing.T) {
+	p := New()
+	_, err := p.ParseStdin([]byte{})
 	if err == nil {
 		t.Fatal("expected error for empty stdin")
 	}

@@ -36,5 +36,5 @@
                                                                                                                         
                                                                                                                         
                                                                                                                         
- tokei test-version [;m[0m PATH [;m[0m project                         [;m[0m MODE [;m[0m Nav [;m[0m LANG [;m[0m All [;m[0m CODE [;m[0m 400 (77%) [;m[0m TOTAL [;m[0m 515 
+ test test-version [;m[0m PATH [;m[0m project                          [;m[0m MODE [;m[0m Nav [;m[0m LANG [;m[0m All [;m[0m CODE [;m[0m 400 (77%) [;m[0m TOTAL [;m[0m 515 
 ↑/k  - Move up • e  - Open file in editor • ↓/j  - Move down • g/home  - Go to top • G/end  - Go to bottom • ?  - Toggle[120D[2K[?2004l[?25h[?1002l[?1003l[?1006l

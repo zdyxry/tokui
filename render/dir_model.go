@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/zdyxry/tokui/filter"
+	"github.com/zdyxry/tokui/provider"
 	"github.com/zdyxry/tokui/search"
 	"github.com/zdyxry/tokui/structure"
 
@@ -80,12 +81,12 @@ type DirModel struct {
 	selectedLangs       map[string]bool
 	selectLangsSnapshot map[string]bool
 	selectIndex         int
-	err           error
-	tokeiVersion  string
-	tableEntries  []*tableEntry
-	treeMode      bool
-	treemapMode   bool
-	sortState     SortState
+	err          error
+	providerInfo provider.Info
+	tableEntries []*tableEntry
+	treeMode     bool
+	treemapMode  bool
+	sortState    SortState
 
 	// Treemap view state
 	treemapBlocks      []treemapBlock
@@ -124,7 +125,7 @@ type overlayBounds struct {
 const tableHeaderHeight = 2 // TableHeaderStyle has BorderBottom and no padding
 
 // NewDirModel creates and initializes a directory view model.
-func NewDirModel(nav *Navigation, tokeiVersion string, treeMode, treemapMode bool) *DirModel {
+func NewDirModel(nav *Navigation, info provider.Info, treeMode, treemapMode bool) *DirModel {
 	// Treemap and tree mode are mutually exclusive at the view level.
 	if treemapMode {
 		treeMode = false
@@ -151,20 +152,20 @@ func NewDirModel(nav *Navigation, tokeiVersion string, treeMode, treemapMode boo
 	searchInput := newSearchInput()
 
 	dm := &DirModel{
-		columns:       columns,
-		filters:       filter.NewFiltersList(defaultFilters...),
-		dirsTable:     buildTable(),
-		mode:          PENDING,
-		nav:           nav,
+		columns:      columns,
+		filters:      filter.NewFiltersList(defaultFilters...),
+		dirsTable:    buildTable(),
+		mode:         PENDING,
+		nav:          nav,
 		langFilterIdx: -1, // Default to show all languages
-		selectMode:    false,
+		selectMode:   false,
 		selectedLangs: make(map[string]bool),
-		selectIndex:   0,
-		tokeiVersion:  tokeiVersion,
-		treeMode:      treeMode,
-		treemapMode:   treemapMode,
-		sortState:     SortState{Key: SortByTotal, Desc: true},
-		searchInput:   searchInput,
+		selectIndex:  0,
+		providerInfo: info,
+		treeMode:     treeMode,
+		treemapMode:  treemapMode,
+		sortState:    SortState{Key: SortByTotal, Desc: true},
+		searchInput:  searchInput,
 	}
 
 	return dm
@@ -1204,7 +1205,11 @@ func (dm *DirModel) dirsSummary() string {
 	items := make([]*BarItem, 0, 12)
 
 	if dm.width >= showVersionMinWidth {
-		items = append(items, NewBarItem(fmt.Sprintf("tokei %s", dm.tokeiVersion), "#8338ec", 0))
+		version := dm.providerInfo.Version
+		if version == "" {
+			version = "unknown"
+		}
+		items = append(items, NewBarItem(fmt.Sprintf("%s %s", dm.providerInfo.Name, version), "#8338ec", 0))
 	}
 
 	items = append(items,

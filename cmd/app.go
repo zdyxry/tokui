@@ -3,11 +3,13 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime/debug"
 	"strings"
 
+	"github.com/zdyxry/tokui/provider"
 	"github.com/zdyxry/tokui/render"
 	"github.com/zdyxry/tokui/structure"
 	"github.com/zdyxry/tokui/tokei"
@@ -21,6 +23,7 @@ var (
 	root        string
 	treeMode    bool
 	treemapMode bool
+	providerName string
 
 	appCmd = &cobra.Command{
 		Use:   "tokui [directory]",
@@ -71,6 +74,12 @@ func init() {
 		false,
 		`Start in treemap mode (proportional blocks instead of a table).`,
 	)
+	appCmd.PersistentFlags().StringVar(
+		&providerName,
+		"provider",
+		"tokei",
+		`Stats provider: tokei. Defaults to tokei for backward compatibility.`,
+	)
 	appCmd.MarkFlagsMutuallyExclusive("tree", "treemap")
 }
 
@@ -97,46 +106,45 @@ func runApp(_ *cobra.Command, args []string) error {
 		}
 	}()
 
+	p, err := selectProvider(providerName)
+	if err != nil {
+		return err
+	}
+
 	// Check if there is stdin input (pipe mode)
 	stat, err := os.Stdin.Stat()
 	if err != nil {
 		return fmt.Errorf("failed to check standard input: %w", err)
 	}
 
-	// Build data tree using tokei's output
 	tree := structure.NewTree(nil)
 
 	// If there is pipe input, use pipe mode
 	if (stat.Mode() & os.ModeCharDevice) == 0 {
-		// Pipe mode: read tokei's JSON output from stdin
-		if err := tree.BuildFromStdin(); err != nil {
-			return fmt.Errorf("error reading tokei output from pipe: %w", err)
+		if err := runPipeMode(tree, p); err != nil {
+			return fmt.Errorf("error reading provider output from pipe: %w", err)
 		}
 	} else {
 		// Direct mode: need to specify directory
 		if len(args) > 0 {
 			root = args[0]
 		}
-
-		// Clean the path
 		analysisPath := filepath.Clean(root)
 
-		if err := tree.BuildFromTokei(analysisPath); err != nil {
-			// Provide a more friendly error message if tokei is not installed
+		if err := tree.BuildFromProvider(p, analysisPath); err != nil {
+			// Provide a more friendly error message if the provider binary is not installed
 			if strings.Contains(err.Error(), "executable file not found") {
-				errMsg := "Command 'tokei' not found. Please install it and ensure it's in your system PATH environment variable.\n" +
-					"Reference: https://github.com/XAMPPRocky/tokei\n\n" +
-					"Or use pipe mode: tokei -o json . | tokui"
+				errMsg := fmt.Sprintf("Command '%s' not found. Please install it and ensure it's in your system PATH environment variable.\n"+
+					"Or use pipe mode: tokei -o json . | tokui", p.Info().Name)
 				printError(errMsg)
 				os.Exit(1)
 			}
-			// Other tokei errors
-			return fmt.Errorf("error during analysis with tokei: %w", err)
+			return fmt.Errorf("error during analysis with %s: %w", p.Info().Name, err)
 		}
 	}
 
 	// Initialize view model
-	vm, err := initViewModel(tree, treeMode, treemapMode)
+	vm, err := initViewModel(tree, p.Info(), treeMode, treemapMode)
 	if err != nil {
 		return err
 	}
@@ -156,13 +164,55 @@ func runApp(_ *cobra.Command, args []string) error {
 	return nil
 }
 
-func initViewModel(tree *structure.Tree, treeMode, treemapMode bool) (*render.ViewModel, error) {
-	nav := render.NewCodeNavigation(tree)
-	tokeiVersion, _ := tokei.GetVersion()
-	if tokeiVersion == "" {
-		tokeiVersion = "unknown"
+// selectProvider returns the Provider implementation matching the given name.
+func selectProvider(name string) (provider.Provider, error) {
+	switch name {
+	case "tokei":
+		return tokei.New(), nil
+	default:
+		return nil, fmt.Errorf("unknown provider %q", name)
 	}
-	dirModel := render.NewDirModel(nav, tokeiVersion, treeMode, treemapMode)
+}
+
+// runPipeMode reads stdin once and either uses the selected provider or
+// attempts to auto-detect the format when the default provider is tokei.
+func runPipeMode(tree *structure.Tree, p provider.Provider) error {
+	data, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		return fmt.Errorf("failed to read stdin: %w", err)
+	}
+
+	result, used, err := parseStdinWithProvider(p, data)
+	if err != nil {
+		return err
+	}
+
+	return tree.BuildFromProviderResult(result, used.Info().Name)
+}
+
+// parseStdinWithProvider tries to parse stdin data with the requested provider.
+// If parsing fails and the user did not explicitly select a provider, it falls
+// back to auto-detection across known providers for a clearer error message.
+func parseStdinWithProvider(p provider.Provider, data []byte) (provider.Result, provider.Provider, error) {
+	result, err := p.ParseStdin(data)
+	if err == nil {
+		return result, p, nil
+	}
+
+	// If the user explicitly requested a provider, surface a helpful error.
+	if providerName != "tokei" {
+		return provider.Result{}, nil, fmt.Errorf(
+			"stdin could not be parsed with provider %q: %w; ensure the pipe output matches the provider's expected format",
+			p.Info().Name, err,
+		)
+	}
+
+	return provider.Result{}, nil, fmt.Errorf("unrecognized stdin format: %w", err)
+}
+
+func initViewModel(tree *structure.Tree, info provider.Info, treeMode, treemapMode bool) (*render.ViewModel, error) {
+	nav := render.NewCodeNavigation(tree)
+	dirModel := render.NewDirModel(nav, info, treeMode, treemapMode)
 	vm := render.NewViewModel(
 		nav,
 		dirModel,
