@@ -3,7 +3,7 @@
 [![Build](https://github.com/zdyxry/tokui/actions/workflows/build.yml/badge.svg)](https://github.com/zdyxry/tokui/actions/workflows/build.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/zdyxry/tokui)](https://goreportcard.com/report/github.com/zdyxry/tokui)
 
-**Tokui** is a high-performance, cross-platform command-line tool for visualizing and exploring code statistics. It integrates with the powerful code statistics engine [tokei](https://github.com/XAMPPRocky/tokei) to present code line count metrics through a responsive, keyboard-driven Terminal User Interface (TUI), helping you quickly analyze code composition and understand project structure.
+**Tokui** is a high-performance, cross-platform command-line tool for visualizing and exploring code statistics. It integrates with the powerful code statistics engine [tokei](https://github.com/XAMPPRocky/tokei) by default, and also supports [scc](https://github.com/boyter/scc) as an optional backend, to present code line count, complexity, and byte metrics through a responsive, keyboard-driven Terminal User Interface (TUI), helping you quickly analyze code composition and understand project structure.
 
 > **Project Origin**
 >
@@ -22,6 +22,7 @@ Screenshots below show `tokui` analyzing the [Prometheus](https://github.com/pro
 ## ✨ Features
 
 - **Interactive Terminal UI**: Navigate, filter, and explore your project with an intuitive keyboard-driven interface.
+- **Multiple Stats Providers**: Use `tokei` (default) for line counts, or switch to `scc` for complexity and bytes metrics.
 - **Deep Tokei Integration**: Leverages `tokei` for accurate lines of code, comments, blanks, and total lines, categorized by language.
 - **File Preview**: Press `Enter` on any file to instantly preview its contents in a scrollable overlay window.
 - **Language Filtering**: Filter by a single language (`Tab`), or select multiple languages via the multi-select overlay (`Ctrl+L`).
@@ -47,7 +48,7 @@ If you are building from source or want to use your own `tokei` installation, en
 
 Download the latest release from the [Releases](https://github.com/zdyxry/tokui/releases) page. Unzip and run—no extra installation required.
 
-### Using `go install` (Go 1.24+)
+### Using `go install` (Go 1.25+)
 
 ```bash
 go install github.com/zdyxry/tokui@latest
@@ -55,7 +56,7 @@ go install github.com/zdyxry/tokui@latest
 
 This downloads, compiles, and installs the latest `tokui` binary into your `$GOPATH/bin` (or `$GOBIN`). The `tokei` binary is embedded at compile time, so no separate `tokei` installation is required.
 
-### Build from Source (Go 1.24+)
+### Build from Source (Go 1.25+)
 
 ```bash
 # Clone the repository
@@ -80,11 +81,14 @@ Tokui supports two modes of operation:
 
 ### 1. Direct Mode (Recommended)
 
-Tokui automatically invokes the bundled (or system-installed) `tokei` to analyze the specified directory.
+Tokui automatically invokes the selected provider (`tokei` by default) to analyze the specified directory.
 
 ```bash
-# Analyze the current directory
+# Analyze the current directory with tokei
 tokui
+
+# Analyze with scc for complexity/bytes metrics
+tokui --provider scc
 
 # Analyze a specific directory
 tokui /path/to/your/project
@@ -92,14 +96,17 @@ tokui /path/to/your/project
 
 ### 2. Pipe Mode
 
-If you have `tokei` installed separately, run it manually with custom arguments and pipe its JSON output to `tokui`. This is useful for advanced filtering (e.g., `--exclude`).
+If you have `tokei` installed separately, run it manually with custom arguments and pipe its JSON output to `tokui`. This is useful for advanced filtering (e.g., `--exclude`). `tokui` also accepts `scc --by-file -f json` output and auto-detects the format.
 
 ```bash
-# Analyze the current directory
+# Analyze the current directory with tokei
 tokei -o json . | tokui
 
 # Analyze a specific directory and exclude node_modules
 tokei -o json --exclude node_modules . | tokui
+
+# Or use scc for complexity/bytes metrics
+scc --by-file -f json . | tokui
 ```
 
 ### CLI Arguments
@@ -109,10 +116,11 @@ Usage:
   tokui [directory] [flags]
 
 Flags:
-  -r, --root string   Specify the root directory to analyze. Defaults to the current directory ".".
-  -t, --tree          Start in tree mode. Directories are expandable inline instead of navigable.
-      --treemap       Start in treemap mode. Show proportional blocks instead of a table.
-  -h, --help          Show help information
+  -r, --root string    Specify the root directory to analyze. Defaults to the current directory ".".
+      --provider       Stats provider: tokei|scc. Defaults to tokei.
+  -t, --tree           Start in tree mode. Directories are expandable inline instead of navigable.
+      --treemap        Start in treemap mode. Show proportional blocks instead of a table.
+  -h, --help           Show help information
 ```
 
 ## ⌨️ Keybindings

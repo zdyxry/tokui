@@ -131,17 +131,24 @@ func NewDirModel(nav *Navigation, info provider.Info, treeMode, treemapMode bool
 		treeMode = false
 	}
 
-	// Define new column headers for the table
+	// Define new column headers for the table. Optional metrics are appended
+	// based on the Provider's advertised capabilities.
 	columns := []Column{
-		{Title: ""},                          // Icon
-		{Title: ""},                          // Full path (hidden)
-		{Title: "Name", SortKey: SortByName}, // Name
+		{Title: ""},                                    // Icon
+		{Title: ""},                                    // Full path (hidden)
+		{Title: "Name", SortKey: SortByName},           // Name
 		{Title: "Languages", SortKey: SortByLanguages}, // Languages involved
 		{Title: "Code", SortKey: SortByCode},           // Lines of code
 		{Title: "Comments", SortKey: SortByComments},   // Comment lines
 		{Title: "Blanks", SortKey: SortByBlanks},       // Blank lines
 		{Title: "Total", SortKey: SortByTotal},         // Total lines
 		{Title: "% of Parent", SortKey: SortByPercent}, // Percentage of parent directory
+	}
+	if info.Capabilities&provider.CapComplexity != 0 {
+		columns = append(columns, Column{Title: "Complexity", SortKey: SortByComplexity})
+	}
+	if info.Capabilities&provider.CapBytes != 0 {
+		columns = append(columns, Column{Title: "Bytes", SortKey: SortByBytes})
 	}
 
 	// Keep only the name filter
@@ -169,6 +176,108 @@ func NewDirModel(nav *Navigation, info provider.Info, treeMode, treemapMode bool
 	}
 
 	return dm
+}
+
+// visibleColumns returns the columns that should be rendered given the current
+// terminal width and sort key. Optional columns are hidden on narrow screens
+// unless they are the active sort column.
+func (dm *DirModel) visibleColumns() []Column {
+	cols := make([]Column, 0, len(dm.columns))
+	for _, c := range dm.columns {
+		switch c.SortKey {
+		case SortByComplexity:
+			if dm.width < 80 && dm.sortState.Key != SortByComplexity {
+				continue
+			}
+		case SortByBytes:
+			if dm.width < 100 && dm.sortState.Key != SortByBytes {
+				continue
+			}
+		case SortByLanguages, SortByComments, SortByBlanks:
+			if dm.width < 60 && dm.sortState.Key != c.SortKey {
+				continue
+			}
+		}
+		cols = append(cols, c)
+	}
+	return cols
+}
+
+// columnMinWidth returns the minimum width for a visible column.
+func columnMinWidth(c Column) int {
+	switch c.SortKey {
+	case SortByName:
+		return 0 // computed from content
+	case SortByLanguages:
+		return 24
+	case SortByPercent:
+		return 14
+	case SortByNone:
+		return 0 // icon (handled explicitly) and hidden path column
+	default:
+		return 12 // numeric columns
+	}
+}
+
+// buildRow creates a table row for the given entry using the supplied visible
+// columns, display name, language string, stats and percentage.
+// buildParentRow creates the synthetic ".." row shown in navigation mode.
+func (dm *DirModel) buildParentRow() table.Row {
+	row := make(table.Row, len(dm.columns))
+	for i, c := range dm.columns {
+		switch i {
+		case 0:
+			row[i] = "⬆"
+		case 1:
+			row[i] = ""
+		default:
+			switch c.SortKey {
+			case SortByName:
+				row[i] = ".."
+			case SortByLanguages, SortByPercent:
+				row[i] = ""
+			default:
+				row[i] = "0"
+			}
+		}
+	}
+	return row
+}
+
+func (dm *DirModel) buildRow(cols []Column, entry *structure.Entry, name, langStr string, stats structure.CodeStats, percent float64) table.Row {
+	row := make(table.Row, len(cols))
+	for i, c := range cols {
+		switch i {
+		case 0:
+			row[i] = EntryIcon(entry)
+		case 1:
+			row[i] = entry.Path
+		default:
+			switch c.SortKey {
+			case SortByName:
+				row[i] = name
+			case SortByLanguages:
+				row[i] = langStr
+			case SortByCode:
+				row[i] = strconv.FormatInt(stats.Code, 10)
+			case SortByComments:
+				row[i] = strconv.FormatInt(stats.Comments, 10)
+			case SortByBlanks:
+				row[i] = strconv.FormatInt(stats.Blanks, 10)
+			case SortByTotal:
+				row[i] = strconv.FormatInt(stats.Total(), 10)
+			case SortByPercent:
+				row[i] = fmt.Sprintf("%.2f %%", percent)
+			case SortByComplexity:
+				row[i] = strconv.FormatInt(stats.Complexity, 10)
+			case SortByBytes:
+				row[i] = strconv.FormatInt(stats.Bytes, 10)
+			default:
+				row[i] = ""
+			}
+		}
+	}
+	return row
 }
 
 // newSearchInput creates a styled text input for the global search overlay.
@@ -849,6 +958,14 @@ func (dm *DirModel) buildChildComparator() func(a, b *structure.Entry) int {
 		return func(a, b *structure.Entry) int {
 			return cmpVal(getComparableStats(a).Total(), getComparableStats(b).Total())
 		}
+	case SortByComplexity:
+		return func(a, b *structure.Entry) int {
+			return cmpVal(getComparableStats(a).Complexity, getComparableStats(b).Complexity)
+		}
+	case SortByBytes:
+		return func(a, b *structure.Entry) int {
+			return cmpVal(getComparableStats(a).Bytes, getComparableStats(b).Bytes)
+		}
 	default:
 		return func(a, b *structure.Entry) int { return cmpVal(a.TotalStats.Total(), b.TotalStats.Total()) }
 	}
@@ -865,6 +982,8 @@ func (dm *DirModel) cycleSortColumn() {
 		SortByBlanks,
 		SortByTotal,
 		SortByPercent,
+		SortByComplexity,
+		SortByBytes,
 	}
 
 	idx := -1
@@ -954,17 +1073,7 @@ func (dm *DirModel) updateTableData(resetCursor ...bool) {
 						langStr += strings.Repeat(" ", pad)
 					}
 				}
-				rows = append(rows, table.Row{
-					EntryIcon(entry),
-					entry.Path,
-					name,
-					langStr,
-					strconv.FormatInt(stats.Code, 10),
-					strconv.FormatInt(stats.Comments, 10),
-					strconv.FormatInt(stats.Blanks, 10),
-					strconv.FormatInt(total, 10),
-					fmt.Sprintf("%.2f %%", percent),
-				})
+				rows = append(rows, dm.buildRow(dm.columns, entry, name, langStr, stats, percent))
 				dm.tableEntries = append(dm.tableEntries, &tableEntry{entry: entry, depth: depth})
 				if entry.IsDir && entry.Expanded {
 					entry.SortChildBy(dm.buildChildComparator())
@@ -992,17 +1101,7 @@ func (dm *DirModel) updateTableData(resetCursor ...bool) {
 			if lipgloss.Width(langStr) > tempLangsWidth {
 				langStr = fmtName(langStr, tempLangsWidth)
 			}
-			rows = append(rows, table.Row{
-				EntryIcon(entry),
-				entry.Path,
-				name,
-				langStr,
-				strconv.FormatInt(stats.Code, 10),
-				strconv.FormatInt(stats.Comments, 10),
-				strconv.FormatInt(stats.Blanks, 10),
-				strconv.FormatInt(stats.Total(), 10),
-				fmt.Sprintf("%.2f %%", percent),
-			})
+			rows = append(rows, dm.buildRow(dm.columns, entry, name, langStr, stats, percent))
 			dm.tableEntries = append(dm.tableEntries, &tableEntry{entry: entry, depth: depth})
 
 			if entry.IsDir && entry.Expanded {
@@ -1021,13 +1120,7 @@ func (dm *DirModel) updateTableData(resetCursor ...bool) {
 		if dm.nav.entryStack.len() > 0 {
 			parentEntry := &structure.Entry{Path: "..", IsDir: true}
 			dm.tableEntries = append(dm.tableEntries, &tableEntry{entry: parentEntry, isParent: true})
-			rows = append(rows, table.Row{
-				"⬆",
-				"",
-				"..",
-				"",
-				"0", "0", "0", "0", "",
-			})
+			rows = append(rows, dm.buildParentRow())
 		}
 		for _, child := range dm.nav.Entry().Child {
 			if !dm.filters.Valid(child) {
@@ -1066,17 +1159,7 @@ func (dm *DirModel) updateTableData(resetCursor ...bool) {
 						langStr += strings.Repeat(" ", pad)
 					}
 				}
-				rows = append(rows, table.Row{
-					EntryIcon(child),
-					child.Path,
-					name,
-					langStr,
-					strconv.FormatInt(stats.Code, 10),
-					strconv.FormatInt(stats.Comments, 10),
-					strconv.FormatInt(stats.Blanks, 10),
-					strconv.FormatInt(total, 10),
-					fmt.Sprintf("%.2f %%", percent),
-				})
+				rows = append(rows, dm.buildRow(dm.columns, child, name, langStr, stats, percent))
 				dm.tableEntries = append(dm.tableEntries, &tableEntry{entry: child, depth: 0})
 				continue
 			}
@@ -1098,49 +1181,37 @@ func (dm *DirModel) updateTableData(resetCursor ...bool) {
 			if lipgloss.Width(langStr) > tempLangsWidth {
 				langStr = fmtName(langStr, tempLangsWidth)
 			}
-			rows = append(rows, table.Row{
-				EntryIcon(child),
-				child.Path,
-				name,
-				langStr,
-				strconv.FormatInt(stats.Code, 10),
-				strconv.FormatInt(stats.Comments, 10),
-				strconv.FormatInt(stats.Blanks, 10),
-				strconv.FormatInt(stats.Total(), 10),
-				fmt.Sprintf("%.2f %%", percent),
-			})
+			rows = append(rows, dm.buildRow(dm.columns, child, name, langStr, stats, percent))
 			dm.tableEntries = append(dm.tableEntries, &tableEntry{entry: child, depth: 0})
 		}
 	}
 
 	// --- Step 2: Calculate and set final column widths ---
-	iconWidth := 4
-	percentWidth := 14
-	numericWidth := 12
-	languagesWidth := 24
-
 	nameWidth := maxNameWidth + 2
 
-	// Ensure each column is wide enough for its titled (including sort indicator).
-	minWidths := []int{
-		iconWidth,
-		0,
-		nameWidth,
-		languagesWidth,
-		numericWidth,
-		numericWidth,
-		numericWidth,
-		numericWidth,
-		percentWidth,
-	}
+	// Compute minimum widths for each column based on its type.
+	minWidths := make([]int, len(dm.columns))
 	for i, c := range dm.columns {
+		minWidths[i] = columnMinWidth(c)
+		if i == 0 {
+			minWidths[i] = max(minWidths[i], 4) // icon column
+		}
+		if i == 2 {
+			minWidths[i] = nameWidth
+		}
 		titleWidth := lipgloss.Width(c.FmtName(dm.sortState))
 		if titleWidth > minWidths[i] {
 			minWidths[i] = titleWidth
 		}
 	}
 
-	fixedWidths := minWidths[0] + minWidths[1] + minWidths[3] + minWidths[4] + minWidths[5] + minWidths[6] + minWidths[7] + minWidths[8]
+	// Sum all fixed-width columns (everything except Name).
+	fixedWidths := 0
+	for i := range dm.columns {
+		if i != 2 {
+			fixedWidths += minWidths[i]
+		}
+	}
 	totalRequiredWidth := fixedWidths + minWidths[2]
 
 	if totalRequiredWidth > dm.width {

@@ -74,7 +74,7 @@ type Result struct {
 type Provider interface {
     Info() Info
     Analyze(path string) (Result, error)
-    AnalyzeFromStdin() (Result, error) // 支持 pipe 模式
+    ParseStdin(data []byte) (Result, error) // 支持 pipe 模式
 }
 ```
 
@@ -104,7 +104,7 @@ func (p *TokeiProvider) Info() provider.Info {
 }
 
 func (p *TokeiProvider) Analyze(path string) (provider.Result, error) { ... }
-func (p *TokeiProvider) AnalyzeFromStdin() (provider.Result, error) { ... }
+func (p *TokeiProvider) ParseStdin(data []byte) (provider.Result, error) { ... }
 ```
 
 `Info().Version` 对 tokei 采用 **lazy-init**：首次调用 `Info()` 时执行 `tokei --version` 并缓存，避免在 Provider 构造阶段就依赖二进制路径解析。若二进制不可用，版本显示为 `"unknown"`。
@@ -204,10 +204,10 @@ func (cs *CodeStats) Add(other CodeStats) {
 
 ```go
 func (t *Tree) BuildFromProvider(p provider.Provider, path string) error
-func (t *Tree) BuildFromProviderStdin(p provider.Provider) error
+func (t *Tree) BuildFromProviderResult(result provider.Result, root string) error
 ```
 
-现有 `BuildFromTokei` / `BuildFromStdin` 可保留为薄封装，或在 cmd 层完全由 Provider 选择替代。
+`BuildFromProviderResult` 接受已解析的 `provider.Result`，便于 pipe 模式下先读取 stdin、再做格式嗅探与解析。现有 `BuildFromTokei` / `BuildFromStdin` 由 Provider 选择替代。
 
 `AggregateStats` 需要把 `Complexity`、`MaxComplexity` 和 `Bytes` 同步向上聚合。
 
@@ -326,17 +326,14 @@ appCmd.PersistentFlags().String("provider", "tokei", "Stats provider: tokei|scc"
 执行逻辑：
 
 ```go
-var p provider.Provider
-switch providerFlag {
-case "scc":
-    p = scc.New()
-default:
-    p = tokei.New()
-}
+p, err := selectProvider(providerName)
+// ...
 
 tree := structure.NewTree(nil)
 if isPipe {
-    err = tree.BuildFromProviderStdin(p)
+    data, _ := io.ReadAll(os.Stdin)
+    result, used, _ := parseStdinWithProvider(p, data)
+    err = tree.BuildFromProviderResult(result, used.Info().Name)
 } else {
     err = tree.BuildFromProvider(p, root)
 }
@@ -359,13 +356,13 @@ tokei -o json . | tokui
    - 若用户显式 `--provider=scc` 但输入是 tokei JSON：提示 `"stdin looks like tokei JSON, but --provider=scc expects scc JSON; omit --provider to auto-detect"`。
    - 若无法识别：提示支持的两种 pipe 命令示例。
 
-实现上可在 `provider` 包增加辅助函数：
+实现上在 `cmd/app.go` 增加 `parseStdinWithProvider`：
 
 ```go
-func DetectAndParseStdin() (Provider, Result, error)
+func parseStdinWithProvider(p provider.Provider, data []byte) (provider.Result, provider.Provider, error)
 ```
 
-或在 cmd 层尝试各 Provider 的 `AnalyzeFromStdin` 并按错误类型回退。
+先尝试用户指定的 Provider；若失败且用户未显式选择非默认 Provider，则回退尝试其他已知 Provider。
 
 ---
 
@@ -409,13 +406,13 @@ fileStats[relativePath][lang] = structure.CodeStats{
 
 1. **技术验证**：`go get github.com/boyter/scc/v3@latest`，确认实际版本要求与编译可行性。
 2. **升级 Go 版本**至 ≥ 1.25.2。
-3. 新建 `provider` 包，定义接口、能力常量与 `DetectAndParseStdin` 辅助函数。
+3. 新建 `provider` 包，定义接口与能力常量；在 `cmd/app.go` 实现 `parseStdinWithProvider` 完成 stdin 自动识别。
 4. 改造 `tokei/tokei.go` 为 `TokeiProvider`，实现 `provider.Provider`，版本 lazy-init。
 5. 扩展 `structure.CodeStats`（含 `MaxComplexity`）与 `Tree` 构建入口；统一路径归一化函数。
 6. **渲染状态栏先行**：修改 `NewDirModel` 接收 `provider.Info`，替换状态栏中的 `tokei %s`。
 7. **渲染动态列**：按 `Capabilities` 动态生成列与排序键，加入窄屏隐藏策略。
 8. 新增 `provider/scc` 包，实现 scc 库调用（`sync.Once` 初始化、结果映射）。
-9. `cmd/app.go` 增加 `--provider` 标志、Provider 选择与 stdin 自动识别逻辑。
+9. `cmd/app.go` 增加 `--provider` 标志、`selectProvider` 与 `parseStdinWithProvider` 逻辑。
 10. 补充测试：
     - `TokeiProvider` / `SCCProvider` 接口符合性测试。
     - SCCProvider 结果映射到 `provider.FileStats`。

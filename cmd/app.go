@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/zdyxry/tokui/provider"
+	"github.com/zdyxry/tokui/provider/scc"
 	"github.com/zdyxry/tokui/render"
 	"github.com/zdyxry/tokui/structure"
 	"github.com/zdyxry/tokui/tokei"
@@ -78,7 +79,7 @@ func init() {
 		&providerName,
 		"provider",
 		"tokei",
-		`Stats provider: tokei. Defaults to tokei for backward compatibility.`,
+		`Stats provider: tokei|scc. Defaults to tokei for backward compatibility.`,
 	)
 	appCmd.MarkFlagsMutuallyExclusive("tree", "treemap")
 }
@@ -169,13 +170,15 @@ func selectProvider(name string) (provider.Provider, error) {
 	switch name {
 	case "tokei":
 		return tokei.New(), nil
+	case "scc":
+		return scc.New(), nil
 	default:
 		return nil, fmt.Errorf("unknown provider %q", name)
 	}
 }
 
 // runPipeMode reads stdin once and either uses the selected provider or
-// attempts to auto-detect the format when the default provider is tokei.
+// attempts to auto-detect the format.
 func runPipeMode(tree *structure.Tree, p provider.Provider) error {
 	data, err := io.ReadAll(os.Stdin)
 	if err != nil {
@@ -191,15 +194,15 @@ func runPipeMode(tree *structure.Tree, p provider.Provider) error {
 }
 
 // parseStdinWithProvider tries to parse stdin data with the requested provider.
-// If parsing fails and the user did not explicitly select a provider, it falls
-// back to auto-detection across known providers for a clearer error message.
+// If parsing fails and the user kept the default "tokei" provider, it attempts
+// auto-detection across all known providers before returning a clear error.
 func parseStdinWithProvider(p provider.Provider, data []byte) (provider.Result, provider.Provider, error) {
 	result, err := p.ParseStdin(data)
 	if err == nil {
 		return result, p, nil
 	}
 
-	// If the user explicitly requested a provider, surface a helpful error.
+	// If the user explicitly selected a non-default provider, do not auto-detect.
 	if providerName != "tokei" {
 		return provider.Result{}, nil, fmt.Errorf(
 			"stdin could not be parsed with provider %q: %w; ensure the pipe output matches the provider's expected format",
@@ -207,7 +210,21 @@ func parseStdinWithProvider(p provider.Provider, data []byte) (provider.Result, 
 		)
 	}
 
-	return provider.Result{}, nil, fmt.Errorf("unrecognized stdin format: %w", err)
+	// Auto-detect: try every other known provider.
+	candidates := []provider.Provider{tokei.New(), scc.New()}
+	for _, candidate := range candidates {
+		if candidate.Info().Name == p.Info().Name {
+			continue
+		}
+		result, err := candidate.ParseStdin(data)
+		if err == nil {
+			return result, candidate, nil
+		}
+	}
+
+	return provider.Result{}, nil, fmt.Errorf(
+		"unrecognized stdin format; expected tokei JSON (tokei -o json ...) or scc JSON (scc --by-file -f json ...)",
+	)
 }
 
 func initViewModel(tree *structure.Tree, info provider.Info, treeMode, treemapMode bool) (*render.ViewModel, error) {

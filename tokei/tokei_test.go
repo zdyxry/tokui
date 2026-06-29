@@ -6,6 +6,8 @@ import (
 	"github.com/zdyxry/tokui/provider"
 )
 
+var _ provider.Provider = (*TokeiProvider)(nil)
+
 func TestProviderInterface(t *testing.T) {
 	p := New()
 	info := p.Info()

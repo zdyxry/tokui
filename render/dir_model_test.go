@@ -182,8 +182,9 @@ func TestDirModelBuildChildComparator(t *testing.T) {
 func TestDirModelCycleSortColumn(t *testing.T) {
 	dm := newTestDirModel()
 	// newTestDirModel initializes sortState to SortByTotal, so the first cycle
-	// moves to SortByPercent, then wraps back to SortByName.
-	order := []SortKey{SortByPercent, SortByName, SortByLanguages, SortByCode, SortByComments, SortByBlanks, SortByTotal}
+	// Starting from SortByTotal, the cycle is Percent, Complexity, Bytes,
+	// Name, Languages, Code, Comments, Blanks, then wraps back to Total.
+	order := []SortKey{SortByPercent, SortByComplexity, SortByBytes, SortByName, SortByLanguages, SortByCode, SortByComments, SortByBlanks, SortByTotal}
 
 	for i := 0; i < len(order)*2; i++ {
 		expected := order[i%len(order)]
@@ -1089,5 +1090,138 @@ func TestTreemapViewHeight(t *testing.T) {
 	got := lipgloss.Height(view)
 	if got != dm.height {
 		t.Fatalf("expected view height %d, got %d", dm.height, got)
+	}
+}
+
+func sccProviderInfo() provider.Info {
+	return provider.Info{
+		Name:         "scc",
+		Capabilities: provider.CapLines | provider.CapComplexity | provider.CapBytes,
+	}
+}
+
+func TestNewDirModel_DynamicColumns(t *testing.T) {
+	root := structure.NewDirEntry("root")
+	root.AggregateStats()
+
+	dm := NewDirModel(NewCodeNavigation(structure.NewTree(root)), sccProviderInfo(), false, false)
+
+	var got []SortKey
+	for _, c := range dm.columns {
+		got = append(got, c.SortKey)
+	}
+	want := []SortKey{
+		SortByNone, SortByNone, SortByName, SortByLanguages,
+		SortByCode, SortByComments, SortByBlanks, SortByTotal,
+		SortByPercent, SortByComplexity, SortByBytes,
+	}
+	if len(got) != len(want) {
+		t.Fatalf("expected columns %v, got %v", want, got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("column %d: expected %q, got %q", i, want[i], got[i])
+		}
+	}
+}
+
+func TestVisibleColumns_Wide(t *testing.T) {
+	dm := NewDirModel(NewCodeNavigation(structure.NewTree(structure.NewDirEntry("root"))), sccProviderInfo(), false, false)
+	dm.width = 120
+	dm.sortState = SortState{Key: SortByTotal, Desc: true}
+
+	cols := dm.visibleColumns()
+	if len(cols) != len(dm.columns) {
+		t.Errorf("expected all %d columns at width 120, got %d", len(dm.columns), len(cols))
+	}
+}
+
+func TestVisibleColumns_NarrowHidesOptional(t *testing.T) {
+	dm := NewDirModel(NewCodeNavigation(structure.NewTree(structure.NewDirEntry("root"))), sccProviderInfo(), false, false)
+	dm.width = 50
+	dm.sortState = SortState{Key: SortByTotal, Desc: true}
+
+	cols := dm.visibleColumns()
+	for _, c := range cols {
+		switch c.SortKey {
+		case SortByComplexity, SortByBytes, SortByLanguages, SortByComments, SortByBlanks:
+			t.Errorf("expected %q to be hidden at width 50, but it was visible", c.SortKey)
+		}
+	}
+}
+
+func TestVisibleColumns_ActiveSortShownDespiteNarrow(t *testing.T) {
+	dm := NewDirModel(NewCodeNavigation(structure.NewTree(structure.NewDirEntry("root"))), sccProviderInfo(), false, false)
+	dm.width = 50
+	dm.sortState = SortState{Key: SortByComplexity, Desc: true}
+
+	cols := dm.visibleColumns()
+	found := false
+	for _, c := range cols {
+		if c.SortKey == SortByComplexity {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected active sort column %q to remain visible at width 50", SortByComplexity)
+	}
+}
+
+func TestBuildRow_WithComplexityAndBytes(t *testing.T) {
+	root := structure.NewDirEntry("root")
+	root.AddChild(structure.NewFileEntry("root/a.go", map[string]structure.CodeStats{
+		"Go": {Code: 20, Comments: 5, Blanks: 5, Complexity: 7, Bytes: 1234},
+	}))
+	root.AggregateStats()
+
+	dm := NewDirModel(NewCodeNavigation(structure.NewTree(root)), sccProviderInfo(), false, false)
+	entry := root.Child[0]
+	stats := entry.TotalStats
+
+	row := dm.buildRow(dm.columns, entry, "a.go", "Go", stats, 100.0)
+	if len(row) != len(dm.columns) {
+		t.Fatalf("expected row length %d, got %d", len(dm.columns), len(row))
+	}
+
+	want := map[SortKey]string{
+		SortByName:       "a.go",
+		SortByLanguages:  "Go",
+		SortByCode:       "20",
+		SortByComments:   "5",
+		SortByBlanks:     "5",
+		SortByTotal:      "30",
+		SortByPercent:    "100.00 %",
+		SortByComplexity: "7",
+		SortByBytes:      "1234",
+	}
+	for i, c := range dm.columns {
+		if wantVal, ok := want[c.SortKey]; ok && row[i] != wantVal {
+			t.Errorf("column %q: expected %q, got %q", c.SortKey, wantVal, row[i])
+		}
+	}
+}
+
+func TestBuildChildComparator_ComplexityAndBytes(t *testing.T) {
+	root := structure.NewDirEntry("root")
+	root.AddChild(structure.NewFileEntry("root/a.go", map[string]structure.CodeStats{
+		"Go": {Code: 10, Complexity: 5, Bytes: 100},
+	}))
+	root.AddChild(structure.NewFileEntry("root/b.go", map[string]structure.CodeStats{
+		"Go": {Code: 10, Complexity: 3, Bytes: 200},
+	}))
+	root.AggregateStats()
+
+	dm := NewDirModel(NewCodeNavigation(structure.NewTree(root)), sccProviderInfo(), false, false)
+
+	dm.sortState = SortState{Key: SortByComplexity, Desc: true}
+	cmp := dm.buildChildComparator()
+	if cmp(root.Child[0], root.Child[1]) >= 0 {
+		t.Error("expected a.go (complexity 5) to come before b.go (complexity 3)")
+	}
+
+	dm.sortState = SortState{Key: SortByBytes, Desc: false}
+	cmp = dm.buildChildComparator()
+	if cmp(root.Child[0], root.Child[1]) >= 0 {
+		t.Error("expected a.go (bytes 100) to come before b.go (bytes 200)")
 	}
 }
