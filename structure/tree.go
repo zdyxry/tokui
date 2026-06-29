@@ -50,26 +50,9 @@ func (t *Tree) BuildFromTokei(path string) error {
 			continue
 		}
 		for _, fileReport := range stats.Reports {
-			// 4. *** Core logic: Path normalization ***
-			//    Goal: Uniformly convert paths returned by tokei (which may be absolute or relative)
-			//    to relative paths relative to the analysis root directory.
-
-			// Convert both the tokei-returned file path and our absolute analysis path to use '/' separators for reliable comparison and trimming.
-			tokeiFilePath := filepath.ToSlash(fileReport.Name)
-			absAnalysisPath := filepath.ToSlash(absPath)
-
-			// Trim the absolute path prefix to get the relative path.
-			// For example, convert "/path/to/project/src/main.go" to "src/main.go".
-			// `TrimPrefix` is case-sensitive, which is the correct behavior on most file systems.
-			relativePath := strings.TrimPrefix(tokeiFilePath, absAnalysisPath)
-
-			// Remove possible leading slash to ensure the path is purely relative.
-			relativePath = strings.TrimPrefix(relativePath, "/")
-
-			// Ignore the "./" prefix that tokei might produce when analyzing ".".
-			relativePath = strings.TrimPrefix(relativePath, "./")
-
-			// Now `relativePath` is always in the form like "src/main.go" or "README.md".
+			// Normalize paths returned by tokei (absolute or relative) to relative
+			// paths against the analysis root directory.
+			relativePath := normalizePath(absPath, fileReport.Name)
 
 			if _, ok := fileStats[relativePath]; !ok {
 				fileStats[relativePath] = make(map[string]CodeStats)
@@ -180,4 +163,16 @@ func (t *Tree) addFileToTree(root *Entry, relativePath string, stats map[string]
 			currentNode.AddChild(fileEntry)
 		}
 	}
+}
+
+// normalizePath converts a raw file path (absolute or relative) to a path
+// relative to the analysis root. It handles slash normalization and removes
+// leading "./" or "/" prefixes that tools like tokei may produce.
+func normalizePath(root, raw string) string {
+	root = filepath.ToSlash(root)
+	raw = filepath.ToSlash(raw)
+	rel := strings.TrimPrefix(raw, root)
+	rel = strings.TrimPrefix(rel, "/")
+	rel = strings.TrimPrefix(rel, "./")
+	return rel
 }

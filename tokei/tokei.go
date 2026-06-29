@@ -84,6 +84,11 @@ func GetVersion() (string, error) {
 		return "", fmt.Errorf("failed to get tokei version: %w", err)
 	}
 
+	return parseVersionOutput(output)
+}
+
+// parseVersionOutput extracts the version string from tokei --version output.
+func parseVersionOutput(output []byte) (string, error) {
 	fields := strings.Fields(string(output))
 	if len(fields) >= 2 {
 		return fields[1], nil
@@ -91,16 +96,20 @@ func GetVersion() (string, error) {
 	return "", fmt.Errorf("unexpected tokei version output: %s", string(output))
 }
 
-// parseReport handles both direct and nested tokei JSON formats
+// parseReport handles both direct and nested tokei JSON formats.
+//
+// Direct format:  {"Go": {"blanks": ..., "code": ..., "comments": ..., "reports": [...]}}
+// Nested format: {"dirname": {"Go": {"blanks": ..., ...}}}
 func parseReport(data []byte) (LanguageReport, error) {
 	var report LanguageReport
-	// Try to parse directly. If tokei's output is nested (e.g., {"dirname": {"Go": ...}}),
-	// this will fail, then we handle the nested case.
-	if err := json.Unmarshal(data, &report); err == nil {
-		return report, nil // Success, it's a direct LanguageReport
+	// Try to parse directly. Because encoding/json ignores unknown fields, a
+	// nested report can unmarshal into LanguageReport with all-zero Stats, so
+	// we validate that the result actually contains stats.
+	if err := json.Unmarshal(data, &report); err == nil && looksLikeLanguageReport(report) {
+		return report, nil
 	}
 
-	// If direct parsing fails, try to parse as nested map[string]LanguageReport
+	// If direct parsing fails or yields empty stats, try the nested format.
 	var nestedReport map[string]LanguageReport
 	if err := json.Unmarshal(data, &nestedReport); err == nil {
 		// Extract the first (and only) inner report
@@ -110,4 +119,17 @@ func parseReport(data []byte) (LanguageReport, error) {
 	}
 
 	return nil, fmt.Errorf("failed to parse tokei JSON output, unrecognized format")
+}
+
+// looksLikeLanguageReport returns true when the report contains at least one
+// language with non-zero statistics or file reports. This distinguishes a real
+// direct report from a nested report that happened to unmarshal with all-zero
+// values because unknown fields were ignored.
+func looksLikeLanguageReport(report LanguageReport) bool {
+	for _, stats := range report {
+		if stats.Code > 0 || stats.Comments > 0 || stats.Blanks > 0 || len(stats.Reports) > 0 {
+			return true
+		}
+	}
+	return false
 }
