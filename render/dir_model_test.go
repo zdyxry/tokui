@@ -701,6 +701,29 @@ func TestDirModelLanguageSelectQClosesOverlay(t *testing.T) {
 	}
 }
 
+func TestDirModelLanguageSelectEscRevertsChanges(t *testing.T) {
+	dm := newTestDirModel()
+	dm.Update(ScanFinished{})
+
+	dm.Update(tea.KeyMsg{Type: tea.KeyCtrlL})
+	dm.Update(tea.KeyMsg{Type: tea.KeySpace}) // select Go
+	if !dm.selectedLangs["Go"] {
+		t.Fatal("expected Go to be selected before escape")
+	}
+
+	// Esc should revert to the empty selection state from before the overlay opened.
+	dm.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if dm.mode != READY {
+		t.Errorf("expected READY after escape, got %v", dm.mode)
+	}
+	if dm.selectedLangs["Go"] {
+		t.Error("expected Go selection to be reverted after escape")
+	}
+	if len(dm.dirsTable.Rows()) != 3 {
+		t.Errorf("expected all 3 rows after reverting selection, got %d", len(dm.dirsTable.Rows()))
+	}
+}
+
 func TestDirModelInputMode(t *testing.T) {
 	dm := newTestDirModel()
 	dm.Update(ScanFinished{})
