@@ -2,6 +2,7 @@ package render
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
@@ -18,7 +19,7 @@ func (bk bindingKey) String() string {
 // everything else is normalized to lower case.
 func parseBindingKey(msg tea.KeyMsg) bindingKey {
 	raw := msg.String()
-	if len(raw) == 1 && raw != strings.ToLower(raw) {
+	if utf8.RuneCountInString(raw) == 1 && raw != strings.ToLower(raw) {
 		return bindingKey(raw)
 	}
 	return bindingKey(strings.ToLower(raw))

@@ -65,7 +65,11 @@ func newIntegrationViewModel(t *testing.T, treeMode, treemapMode bool) *ViewMode
 
 	nav := NewCodeNavigation(integrationTree())
 	dm := NewDirModel(nav, "test-version", treeMode, treemapMode)
-	return NewViewModel(nav, dm)
+	vm := NewViewModel(nav, dm)
+	// Synchronization channel used by startIntegrationApp to wait until the
+	// initial ScanFinished message has been processed.
+	vm.testInitDoneCh = make(chan struct{})
+	return vm
 }
 
 // startIntegrationApp creates a TestModel for the integration tree, sends the
@@ -77,25 +81,16 @@ func startIntegrationApp(t *testing.T, treeMode, treemapMode bool) *teatest.Test
 	vm := newIntegrationViewModel(t, treeMode, treemapMode)
 	tm := teatest.NewTestModel(t, vm, teatest.WithInitialTermSize(integrationWidth, integrationHeight))
 
-	// teatest starts the Bubble Tea program in a goroutine. Messages sent
-	// before the event loop/renderer are ready are silently dropped, so we
-	// poll with the initialization messages until the project root renders.
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		tm.Send(tea.WindowSizeMsg{Width: integrationWidth, Height: integrationHeight})
-		tm.Send(ScanFinished{})
-
-		out, err := io.ReadAll(tm.Output())
-		if err != nil {
-			t.Fatalf("reading output: %v", err)
-		}
-		if bytes.Contains(out, []byte("project")) {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("project root did not render within %s", 2*time.Second)
-		}
-		time.Sleep(20 * time.Millisecond)
+	// Finish initialization just like the real application does. Wait for the
+	// ScanFinished message to be processed before returning so the caller can
+	// safely assert on the rendered output without racing against startup.
+	doneCh := vm.testInitDoneCh
+	tm.Send(tea.WindowSizeMsg{Width: integrationWidth, Height: integrationHeight})
+	tm.Send(ScanFinished{})
+	select {
+	case <-doneCh:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for ScanFinished to be processed")
 	}
 
 	return tm

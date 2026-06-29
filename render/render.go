@@ -19,6 +19,11 @@ type ScanFinished struct {
 type ViewModel struct {
 	dirModel *DirModel
 	nav      *Navigation
+
+	// testInitDoneCh is closed by Update once a ScanFinished message has been
+	// processed. It is used by integration tests to avoid sending further
+	// messages before initialization has finished.
+	testInitDoneCh chan struct{}
 }
 
 func NewViewModel(n *Navigation, dirModel *DirModel) *ViewModel {
@@ -96,6 +101,14 @@ func (vm *ViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.MouseMsg:
 		return vm.handleMouseMsg(msg)
+
+	case ScanFinished:
+		_, cmd = vm.dirModel.Update(msg)
+		if vm.testInitDoneCh != nil {
+			close(vm.testInitDoneCh)
+			vm.testInitDoneCh = nil
+		}
+		return vm, cmd
 	}
 
 	// Pass all messages to the child model (DirModel) for processing

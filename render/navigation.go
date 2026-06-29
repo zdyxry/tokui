@@ -1,6 +1,7 @@
 package render
 
 import (
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -72,7 +73,7 @@ func (n *Navigation) Up() {
 }
 
 func (n *Navigation) Down(name string, parentCursor, childCursor int) {
-	if len(name) == 0 {
+	if len(name) == 0 || n.entry == nil {
 		return
 	}
 
@@ -91,9 +92,10 @@ func (n *Navigation) AbsPathFromSelectedRow(selectedRow []string) string {
 		return selectedRow[1]
 	}
 
-	// If unable to get it, fall back to building the path based on current entry and name
-	if len(selectedRow) > 1 {
-		return filepath.Join(n.Entry().Path, selectedRow[len(selectedRow)-1])
+	// If unable to get it, fall back to building the path based on current entry and name.
+	// Use path.Join so the result is consistent across platforms.
+	if len(selectedRow) > 1 && n.entry != nil {
+		return path.Join(n.entry.Path, selectedRow[len(selectedRow)-1])
 	}
 
 	return ""
@@ -120,6 +122,10 @@ func (n *Navigation) NavigateToPath(relPath string) *structure.Entry {
 	for i, part := range parts {
 		if part == "" {
 			continue
+		}
+
+		if n.entry == nil {
+			return nil
 		}
 
 		if i == len(parts)-1 {

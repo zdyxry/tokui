@@ -498,8 +498,6 @@ func (dm *DirModel) handleKeyBindings(msg tea.KeyMsg) (tea.Cmd, bool) {
 		}
 	}
 
-	bk = parseBindingKey(msg)
-
 	// Quick search (/ key): activate name filter mode
 	if bk == quickSearch {
 		if dm.mode != INPUT {
