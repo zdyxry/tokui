@@ -499,19 +499,18 @@ func (dm *DirModel) handleKeyBindings(msg tea.KeyMsg) (tea.Cmd, bool) {
 		}
 	}
 
-	// Quick search (/ key): activate name filter mode
-	if bk == quickSearch {
-		if dm.mode != INPUT {
-			dm.mode = INPUT
-			// If the filter is not enabled, enable it
-			if f, ok := dm.filters[filter.NameFilterID].(*filter.NameFilter); ok {
-				if !f.IsEnabled() {
-					dm.filters.ToggleFilter(filter.NameFilterID)
-				}
-				f.ClearInput() // Only clear input content, don't disable the filter
+	// Quick search (/ key): activate name filter mode when not already filtering.
+	// When in INPUT mode, let "/" pass through as a normal filter character.
+	if bk == quickSearch && dm.mode != INPUT {
+		dm.mode = INPUT
+		// If the filter is not enabled, enable it
+		if f, ok := dm.filters[filter.NameFilterID].(*filter.NameFilter); ok {
+			if !f.IsEnabled() {
+				dm.filters.ToggleFilter(filter.NameFilterID)
 			}
-			dm.updateTableData()
+			f.ClearInput() // Only clear input content, don't disable the filter
 		}
+		dm.updateTableData()
 		return nil, true
 	}
 
