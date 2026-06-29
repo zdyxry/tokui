@@ -5,11 +5,11 @@ package scc
 import (
 	"encoding/json"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
 
+	"github.com/boyter/gocodewalker"
 	"github.com/boyter/scc/v3/processor"
 	"github.com/zdyxry/tokui/provider"
 )
@@ -60,26 +60,12 @@ func (p *SCCProvider) Analyze(path string) (provider.Result, error) {
 		return result, nil
 	}
 
-	err = filepath.WalkDir(path, func(filePath string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil // best-effort: skip unreadable entries
-		}
-		if d.IsDir() {
-			if shouldSkipDir(d.Name()) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		f, err := p.countFile(filePath)
-		if err != nil {
-			return nil // best-effort: skip files we cannot process
-		}
-		result.Files = append(result.Files, f)
-		return nil
-	})
-
-	return result, err
+	files, err := p.walkDirectory(path)
+	if err != nil {
+		return provider.Result{}, err
+	}
+	result.Files = files
+	return result, nil
 }
 
 // ParseStdin parses scc JSON output (the format produced by
@@ -155,6 +141,41 @@ func (p *SCCProvider) countFile(filePath string) (provider.FileStats, error) {
 		Blanks:     job.Blank,
 		Complexity: job.Complexity,
 	}, nil
+}
+
+// walkDirectory walks the directory tree using gocodewalker, which respects
+// .gitignore, .ignore and .gitmodules files by default. It returns per-file
+// stats for every file the walker yields.
+func (p *SCCProvider) walkDirectory(path string) ([]provider.FileStats, error) {
+	result := make([]provider.FileStats, 0)
+	queue := make(chan *gocodewalker.File, 128)
+
+	walker := gocodewalker.NewFileWalker(path, queue)
+	// Always skip common VCS and dependency directories, matching the previous
+	// filepath.WalkDir behaviour.
+	walker.ExcludeDirectory = []string{".git", ".hg", ".svn", "node_modules", "vendor"}
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	var walkErr error
+	go func() {
+		defer wg.Done()
+		walkErr = walker.Start()
+	}()
+
+	for f := range queue {
+		stats, err := p.countFile(f.Location)
+		if err != nil {
+			continue // best-effort: skip files we cannot process
+		}
+		result = append(result, stats)
+	}
+
+	wg.Wait()
+	if walkErr != nil {
+		return nil, walkErr
+	}
+	return result, nil
 }
 
 // shouldSkipDir reports whether a directory should be skipped during traversal.
