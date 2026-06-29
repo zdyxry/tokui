@@ -139,9 +139,8 @@ func TestFilePreviewUpdate(t *testing.T) {
 	t.Run("end key jumps to bottom", func(t *testing.T) {
 		fp.viewport.YOffset = 0
 		fp.Update(tea.KeyMsg{Type: tea.KeyEnd})
-		want := max(0, fp.viewport.TotalLineCount()-fp.viewport.VisibleLineCount())
-		if fp.viewport.YOffset != want {
-			t.Errorf("expected end to jump to bottom offset %d, got %d", want, fp.viewport.YOffset)
+		if !fp.viewport.AtBottom() {
+			t.Errorf("expected end to jump to bottom, got YOffset %d", fp.viewport.YOffset)
 		}
 	})
 }

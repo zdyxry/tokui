@@ -171,10 +171,10 @@ func (fp *FilePreview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle viewport navigation keys
 		switch msg.String() {
 		case "home":
-			fp.viewport.YOffset = 0
+			fp.viewport.GotoTop()
 			return fp, nil
 		case "end":
-			fp.viewport.YOffset = max(0, fp.viewport.TotalLineCount()-fp.viewport.VisibleLineCount())
+			fp.viewport.GotoBottom()
 			return fp, nil
 		}
 		fp.viewport, cmd = fp.viewport.Update(msg)
@@ -249,7 +249,7 @@ func (fp *FilePreview) renderBoxWithContent(title, content, scrollInfo string) s
 	header := titleStyle.Width(innerWidth).Align(lipgloss.Center).Render(title)
 
 	// Create the footer with help text and scroll info
-	helpText := "Press q/Esc to close, ↑/↓/j/k to scroll, PgUp/PgDn for page navigation"
+	helpText := "Press q/Esc to close, ↑/↓/j/k to scroll, PgUp/PgDn/Home/End to navigate"
 	var footer string
 	if scrollInfo != "" {
 		// Calculate spacing for justified layout
