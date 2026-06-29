@@ -1225,3 +1225,62 @@ func TestBuildChildComparator_ComplexityAndBytes(t *testing.T) {
 		t.Error("expected a.go (bytes 100) to come before b.go (bytes 200)")
 	}
 }
+
+func TestCycleTreemapSize_WithSCC(t *testing.T) {
+	dm := NewDirModel(
+		NewCodeNavigation(structure.NewTree(structure.NewDirEntry("root"))),
+		sccProviderInfo(),
+		false,
+		true,
+	)
+
+	order := []SortKey{SortByTotal, SortByComplexity, SortByBytes}
+	for i := 0; i < len(order)*2; i++ {
+		expected := order[i%len(order)]
+		if dm.treemapSizeKey != expected {
+			t.Errorf("cycle %d: expected size key %q, got %q", i, expected, dm.treemapSizeKey)
+		}
+		dm.cycleTreemapSize()
+	}
+}
+
+func TestCycleTreemapSize_WithTokei(t *testing.T) {
+	dm := NewDirModel(
+		NewCodeNavigation(structure.NewTree(structure.NewDirEntry("root"))),
+		provider.Info{Name: "tokei", Capabilities: provider.CapLines},
+		false,
+		true,
+	)
+
+	for i := 0; i < 3; i++ {
+		dm.cycleTreemapSize()
+		if dm.treemapSizeKey != SortByTotal {
+			t.Errorf("tokei provider should only support Total size, got %q", dm.treemapSizeKey)
+		}
+	}
+}
+
+func TestTreemapSizeFunc(t *testing.T) {
+	root := structure.NewDirEntry("root")
+	root.AddChild(structure.NewFileEntry("root/a.go", map[string]structure.CodeStats{
+		"Go": {Code: 10, Comments: 2, Blanks: 3, Complexity: 5, Bytes: 1234},
+	}))
+	root.AggregateStats()
+
+	dm := NewDirModel(NewCodeNavigation(structure.NewTree(root)), sccProviderInfo(), false, true)
+
+	dm.treemapSizeKey = SortByTotal
+	if got := dm.treemapSizeFunc()(root.Child[0]); got != 15 {
+		t.Errorf("Total size: expected 15, got %d", got)
+	}
+
+	dm.treemapSizeKey = SortByComplexity
+	if got := dm.treemapSizeFunc()(root.Child[0]); got != 5 {
+		t.Errorf("Complexity size: expected 5, got %d", got)
+	}
+
+	dm.treemapSizeKey = SortByBytes
+	if got := dm.treemapSizeFunc()(root.Child[0]); got != 1234 {
+		t.Errorf("Bytes size: expected 1234, got %d", got)
+	}
+}

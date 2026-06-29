@@ -93,6 +93,7 @@ type DirModel struct {
 	treemapSelected    int
 	treemapOffsetY     int // screen Y where the treemap canvas starts
 	treemapColorByLang bool
+	treemapSizeKey     SortKey
 
 	// Global search state
 	searchIndex         *search.Index
@@ -171,6 +172,7 @@ func NewDirModel(nav *Navigation, info provider.Info, treeMode, treemapMode bool
 		providerInfo: info,
 		treeMode:     treeMode,
 		treemapMode:  treemapMode,
+		treemapSizeKey: SortByTotal,
 		sortState:    SortState{Key: SortByTotal, Desc: true},
 		searchInput:  searchInput,
 	}
@@ -743,6 +745,10 @@ func (dm *DirModel) handleKeyBindings(msg tea.KeyMsg) (tea.Cmd, bool) {
 			dm.treemapColorByLang = !dm.treemapColorByLang
 			dm.updateTableData()
 			return nil, true
+		case cycleTreemapSize:
+			dm.cycleTreemapSize()
+			dm.updateTableData()
+			return nil, true
 		}
 	}
 
@@ -1014,6 +1020,43 @@ func defaultDescForSortKey(key SortKey) bool {
 	}
 }
 
+// treemapSizeFunc returns a sizing function for the treemap based on the
+// current treemapSizeKey. The function respects the active language filter.
+func (dm *DirModel) treemapSizeFunc() func(*structure.Entry) int64 {
+	return func(e *structure.Entry) int64 {
+		stats := dm.comparableStats(e)
+		switch dm.treemapSizeKey {
+		case SortByComplexity:
+			return stats.Complexity
+		case SortByBytes:
+			return stats.Bytes
+		default:
+			return stats.Total()
+		}
+	}
+}
+
+// cycleTreemapSize advances the treemap sizing metric through the metrics
+// supported by the current provider.
+func (dm *DirModel) cycleTreemapSize() {
+	order := []SortKey{SortByTotal}
+	if dm.providerInfo.Capabilities&provider.CapComplexity != 0 {
+		order = append(order, SortByComplexity)
+	}
+	if dm.providerInfo.Capabilities&provider.CapBytes != 0 {
+		order = append(order, SortByBytes)
+	}
+
+	idx := 0
+	for i, k := range order {
+		if k == dm.treemapSizeKey {
+			idx = i
+			break
+		}
+	}
+	dm.treemapSizeKey = order[(idx+1)%len(order)]
+}
+
 // updateTableData updates the table rows based on current filters and state
 func (dm *DirModel) updateTableData(resetCursor ...bool) {
 	if dm.nav.Entry() == nil || !dm.nav.Entry().IsDir {
@@ -1261,7 +1304,19 @@ func (dm *DirModel) dirsSummary() string {
 	}
 
 	codeStr := formatNumber(currentStats.Code)
-	totalStr := formatNumber(currentStats.Total())
+	metricName := "TOTAL"
+	metricValue := currentStats.Total()
+	if dm.treemapMode {
+		switch dm.treemapSizeKey {
+		case SortByComplexity:
+			metricName = "COMPLEXITY"
+			metricValue = currentStats.Complexity
+		case SortByBytes:
+			metricName = "BYTES"
+			metricValue = currentStats.Bytes
+		}
+	}
+	metricStr := formatNumber(metricValue)
 	if currentStats.Total() > 0 {
 		codeStr = fmt.Sprintf("%s (%d%%)", codeStr, currentStats.Code*100/currentStats.Total())
 	}
@@ -1313,8 +1368,8 @@ func (dm *DirModel) dirsSummary() string {
 	items = append(items,
 		NewBarItem("CODE", "#fb5607", 0),
 		DefaultBarItem(codeStr),
-		NewBarItem("TOTAL", "#ffbe0b", 0),
-		DefaultBarItem(totalStr),
+		NewBarItem(metricName, "#ffbe0b", 0),
+		DefaultBarItem(metricStr),
 	)
 
 	return statusBarStyle.Margin(1, 0, 0, 0).Render(NewStatusBar(items, dm.width))
@@ -1380,9 +1435,7 @@ func (dm *DirModel) viewTreemap(availableHeight int) string {
 		h = 3
 	}
 
-	getSize := func(e *structure.Entry) int64 {
-		return dm.comparableStats(e).Total()
-	}
+	getSize := dm.treemapSizeFunc()
 
 	showLegend := dm.treemapColorByLang &&
 		dm.width > treemapLegendTotalWidth+minTreemapWidthWithoutLegend

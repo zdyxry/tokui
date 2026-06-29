@@ -41,6 +41,7 @@ const (
 	toggleTree         bindingKey = "t"
 	toggleTreemap      bindingKey = "m"
 	toggleTreemapColor bindingKey = "c"
+	cycleTreemapSize   bindingKey = "M"
 	cycleSortColumn    bindingKey = "s"
 	toggleSortOrder    bindingKey = "S"
 )
@@ -130,6 +131,13 @@ var dirsKeyMap = [][]key.Binding{
 			key.WithHelp(
 				bindKeyStyle.Render(toggleTreemapColor.String()),
 				helpDescStyle.Render(" - Toggle treemap color mode"),
+			),
+		),
+		key.NewBinding(
+			key.WithKeys(cycleTreemapSize.String()),
+			key.WithHelp(
+				bindKeyStyle.Render(cycleTreemapSize.String()),
+				helpDescStyle.Render(" - Cycle treemap size metric"),
 			),
 		),
 		key.NewBinding(

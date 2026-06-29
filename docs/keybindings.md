@@ -20,6 +20,7 @@
 - `showCart` —— 语言占比饼图浮层。
 - `fullHelp` —— 展开的帮助面板。
 - `treemapColorByLang` —— 树图配色切换。
+- `treemapSizeKey` —— 树图块大小指标（Total / Complexity / Bytes）。
 
 ---
 
@@ -62,6 +63,7 @@
 | `t` | 切换 Tree 模式。 |
 | `m` | 切换 Treemap 模式。 |
 | `c` | 切换 Treemap 颜色模式（按目录 / 按语言）。 |
+| `M` | 循环 Treemap 块大小指标（Total → Complexity → Bytes，需 scc Provider）。 |
 | `s` | 循环排序列。 |
 | `S` | 切换当前排序列的升序/降序。 |
 | `?` | 显示/隐藏完整帮助面板。 |
@@ -71,7 +73,7 @@
 
 按 `s` 会在以下列之间循环：
 
-`Name` → `Languages` → `Code` → `Comments` → `Blanks` → `Total` → `Percent`
+`Name` → `Languages` → `Code` → `Comments` → `Blanks` → `Total` → `Percent` → `Complexity` → `Bytes`
 
 按 `S` 切换方向。文本列默认升序，数值列默认降序。
 
@@ -156,6 +158,7 @@
 | `t` | 从 Treemap 切换回 Tree 模式。 |
 | `m` | 关闭 Treemap 视图。 |
 | `c` | 切换 Treemap 颜色模式。 |
+| `M` | 循环 Treemap 块大小指标。 |
 
 `Enter` 和 `Backspace` 仍由顶层 `ViewModel` 处理，分别用于钻取和返回上级。
 
@@ -168,7 +171,7 @@ READY / TREE / TREEMAP
 ├── 移动: ↑/↓/k/j, home/g, end/G
 ├── 进入: Enter
 ├── 返回: Backspace
-├── 视图: t (tree), m (treemap), c (treemap 配色)
+├── 视图: t (tree), m (treemap), c (treemap 配色), M (treemap 大小指标)
 ├── 过滤: / (快速过滤), Tab (循环单语言), Ctrl+L (多选语言)
 ├── 搜索: Ctrl+P
 ├── 图表: Ctrl+W
