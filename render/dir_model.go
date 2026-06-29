@@ -87,9 +87,10 @@ type DirModel struct {
 	sortState     SortState
 
 	// Treemap view state
-	treemapBlocks   []treemapBlock
-	treemapSelected int
-	treemapOffsetY  int // screen Y where the treemap canvas starts
+	treemapBlocks      []treemapBlock
+	treemapSelected    int
+	treemapOffsetY     int // screen Y where the treemap canvas starts
+	treemapColorByLang bool
 
 	// Global search state
 	searchIndex         *search.Index
@@ -609,6 +610,10 @@ func (dm *DirModel) handleKeyBindings(msg tea.KeyMsg) (tea.Cmd, bool) {
 			return nil, true
 		case toggleTreemap:
 			dm.ToggleTreemapMode()
+			return nil, true
+		case toggleTreemapColor:
+			dm.treemapColorByLang = !dm.treemapColorByLang
+			dm.updateTableData()
 			return nil, true
 		}
 	}
@@ -1192,6 +1197,17 @@ func (dm *DirModel) dirsSummary() string {
 		NewBarItem(dm.statusLangLabel(), "", 0),
 	)
 
+	if dm.treemapMode && dm.width >= showSortMinWidth {
+		colorMode := "dir"
+		if dm.treemapColorByLang {
+			colorMode = "lang"
+		}
+		items = append(items,
+			NewBarItem("COLOR", "#8338ec", 0),
+			NewBarItem(colorMode, "", 0),
+		)
+	}
+
 	if dm.width >= showSortMinWidth {
 		items = append(items,
 			NewBarItem("SORT", "#14b8a6", 0),
@@ -1264,7 +1280,6 @@ func (dm *DirModel) viewTreemap(availableHeight int) string {
 		return treemapEmptyStyle.Render(" (no items to display)")
 	}
 
-	w := dm.width
 	h := availableHeight
 	if h < 3 {
 		h = 3
@@ -1274,7 +1289,14 @@ func (dm *DirModel) viewTreemap(availableHeight int) string {
 		return dm.comparableStats(e).Total()
 	}
 
-	view, blocks := Treemap(w, h, children, getSize, dm.treemapSelected)
+	showLegend := dm.treemapColorByLang &&
+		dm.width > treemapLegendTotalWidth+minTreemapWidthWithoutLegend
+	canvasW := dm.width
+	if showLegend {
+		canvasW -= treemapLegendTotalWidth
+	}
+
+	view, blocks := Treemap(canvasW, h, children, getSize, dm.treemapSelected, dm.treemapColorByLang)
 	dm.treemapBlocks = blocks
 
 	// If a global search result was just applied in treemap mode, select the
@@ -1283,7 +1305,7 @@ func (dm *DirModel) viewTreemap(availableHeight int) string {
 		idx := dm.findTreemapBlockIndex(dm.pendingSearchTarget)
 		if idx >= 0 {
 			dm.treemapSelected = idx
-			view, blocks = Treemap(w, h, children, getSize, dm.treemapSelected)
+			view, blocks = Treemap(canvasW, h, children, getSize, dm.treemapSelected, dm.treemapColorByLang)
 			dm.treemapBlocks = blocks
 		}
 		dm.pendingSearchTarget = nil
@@ -1291,8 +1313,15 @@ func (dm *DirModel) viewTreemap(availableHeight int) string {
 
 	if len(blocks) > 0 && dm.treemapSelected >= len(blocks) {
 		dm.treemapSelected = len(blocks) - 1
-		view, _ = Treemap(w, h, children, getSize, dm.treemapSelected)
+		view, blocks = Treemap(canvasW, h, children, getSize, dm.treemapSelected, dm.treemapColorByLang)
+		dm.treemapBlocks = blocks
 	}
+
+	if showLegend {
+		legend := buildTreemapLegend(dm.treemapBlocks, h, getSize)
+		view = lipgloss.JoinHorizontal(lipgloss.Top, view, legend)
+	}
+
 	return view
 }
 
