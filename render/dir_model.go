@@ -1057,6 +1057,31 @@ func (dm *DirModel) cycleTreemapSize() {
 	dm.treemapSizeKey = order[(idx+1)%len(order)]
 }
 
+// metricValue returns the numeric value of the given CodeStats for the
+// specified sort key. It is used both for table display and for percentages.
+func metricValue(stats structure.CodeStats, key SortKey) int64 {
+	switch key {
+	case SortByComplexity:
+		return stats.Complexity
+	case SortByBytes:
+		return stats.Bytes
+	default:
+		return stats.Total()
+	}
+}
+
+// parentTotalForKey returns the total value of the current directory for the
+// metric associated with the given sort key. It is used as the denominator for
+// the "% of Parent" column.
+func (dm *DirModel) parentTotalForKey(key SortKey) int64 {
+	minSize := int64(1)
+	if dm.nav.Entry() == nil {
+		return minSize
+	}
+	stats := dm.comparableStats(dm.nav.Entry())
+	return max(minSize, metricValue(stats, key))
+}
+
 // updateTableData updates the table rows based on current filters and state
 func (dm *DirModel) updateTableData(resetCursor ...bool) {
 	if dm.nav.Entry() == nil || !dm.nav.Entry().IsDir {
@@ -1070,7 +1095,7 @@ func (dm *DirModel) updateTableData(resetCursor ...bool) {
 
 	// Sort child entries using the current column sort state.
 	dm.nav.Entry().SortChildBy(dm.buildChildComparator())
-	parentTotal := dm.nav.ParentTotalLines(dm.activeLang())
+	parentTotal := dm.parentTotalForKey(dm.sortState.Key)
 
 	dm.tableEntries = make([]*tableEntry, 0)
 	rows := make([]table.Row, 0)
@@ -1106,7 +1131,7 @@ func (dm *DirModel) updateTableData(resetCursor ...bool) {
 				}
 				percent := 0.0
 				if parentTotal > 0 {
-					percent = (float64(total) / float64(parentTotal)) * 100
+					percent = (float64(metricValue(stats, dm.sortState.Key)) / float64(parentTotal)) * 100
 				}
 				langStr := strings.Join(activeLangs, ", ")
 				if lipgloss.Width(langStr) > tempLangsWidth {
@@ -1138,7 +1163,7 @@ func (dm *DirModel) updateTableData(resetCursor ...bool) {
 
 			percent := 0.0
 			if parentTotal > 0 {
-				percent = (float64(stats.Total()) / float64(parentTotal)) * 100
+				percent = (float64(metricValue(stats, dm.sortState.Key)) / float64(parentTotal)) * 100
 			}
 			langStr := strings.Join(entry.Languages(), ", ")
 			if lipgloss.Width(langStr) > tempLangsWidth {
@@ -1192,7 +1217,7 @@ func (dm *DirModel) updateTableData(resetCursor ...bool) {
 				}
 				percent := 0.0
 				if parentTotal > 0 {
-					percent = (float64(total) / float64(parentTotal)) * 100
+					percent = (float64(metricValue(stats, dm.sortState.Key)) / float64(parentTotal)) * 100
 				}
 				langStr := strings.Join(activeLangs, ", ")
 				if lipgloss.Width(langStr) > tempLangsWidth {
@@ -1218,7 +1243,7 @@ func (dm *DirModel) updateTableData(resetCursor ...bool) {
 
 			percent := 0.0
 			if parentTotal > 0 {
-				percent = (float64(stats.Total()) / float64(parentTotal)) * 100
+				percent = (float64(metricValue(stats, dm.sortState.Key)) / float64(parentTotal)) * 100
 			}
 			langStr := strings.Join(child.Languages(), ", ")
 			if lipgloss.Width(langStr) > tempLangsWidth {

@@ -1284,3 +1284,56 @@ func TestTreemapSizeFunc(t *testing.T) {
 		t.Errorf("Bytes size: expected 1234, got %d", got)
 	}
 }
+
+func TestPercentColumn_ContextAware(t *testing.T) {
+	root := structure.NewDirEntry("root")
+	root.AddChild(structure.NewFileEntry("root/a.go", map[string]structure.CodeStats{
+		"Go": {Code: 10, Comments: 5, Blanks: 5, Complexity: 5, Bytes: 1000},
+	}))
+	root.AddChild(structure.NewFileEntry("root/b.go", map[string]structure.CodeStats{
+		"Go": {Code: 30, Comments: 10, Blanks: 10, Complexity: 15, Bytes: 3000},
+	}))
+	root.AggregateStats()
+
+	dm := NewDirModel(NewCodeNavigation(structure.NewTree(root)), sccProviderInfo(), false, false)
+	dm.width = 120
+	dm.height = 30
+
+	tests := []struct {
+		key      SortKey
+		row0     string
+		row1     string
+	}{
+		{SortByTotal, "71.43 %", "28.57 %"},
+		{SortByComplexity, "75.00 %", "25.00 %"},
+		{SortByBytes, "75.00 %", "25.00 %"},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.key), func(t *testing.T) {
+			dm.sortState = SortState{Key: tt.key, Desc: true}
+			dm.updateTableData()
+			rows := dm.dirsTable.Rows()
+			if len(rows) < 2 {
+				t.Fatalf("expected 2 rows, got %d", len(rows))
+			}
+			// Find the percent column index.
+			percentIdx := -1
+			for i, c := range dm.columns {
+				if c.SortKey == SortByPercent {
+					percentIdx = i
+					break
+				}
+			}
+			if percentIdx < 0 {
+				t.Fatal("percent column not found")
+			}
+			if got := rows[0][percentIdx]; got != tt.row0 {
+				t.Errorf("row0 percent: expected %s, got %s", tt.row0, got)
+			}
+			if got := rows[1][percentIdx]; got != tt.row1 {
+				t.Errorf("row1 percent: expected %s, got %s", tt.row1, got)
+			}
+		})
+	}
+}
