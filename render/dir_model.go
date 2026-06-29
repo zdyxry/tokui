@@ -469,7 +469,7 @@ func (dm *DirModel) handleKeyBindings(msg tea.KeyMsg) (tea.Cmd, bool) {
 		switch bk {
 		case cancel:
 			return nil, false
-		case escape, toggleLangSelect:
+		case escape, toggleLangSelect, quit:
 			dm.mode = READY
 			dm.selectMode = false
 			return nil, true

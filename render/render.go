@@ -44,7 +44,7 @@ func (vm *ViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		if vm.dirModel.mode == SELECT_LANG {
 			bk := parseBindingKey(msg)
-			if bk == quit || bk == cancel {
+			if bk == cancel {
 				return vm, tea.Quit
 			}
 			break
