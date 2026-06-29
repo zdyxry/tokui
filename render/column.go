@@ -12,7 +12,6 @@ const (
 	SortByTotal      SortKey = "total"
 	SortByPercent    SortKey = "percent"
 	SortByComplexity SortKey = "complexity"
-	SortByBytes      SortKey = "bytes"
 )
 
 type Column struct {

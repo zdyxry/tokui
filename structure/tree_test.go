@@ -233,7 +233,7 @@ func TestBuildFromProvider_Smoke(t *testing.T) {
 	}
 }
 
-func TestBuildFromResult_ComplexityAndBytes(t *testing.T) {
+func TestBuildFromResult_Complexity(t *testing.T) {
 	tr := NewTree(NewDirEntry("root"))
 	result := provider.Result{
 		Files: []provider.FileStats{
@@ -244,7 +244,6 @@ func TestBuildFromResult_ComplexityAndBytes(t *testing.T) {
 				Comments:   1,
 				Blanks:     1,
 				Complexity: 5,
-				Bytes:      200,
 			},
 		},
 	}
@@ -265,9 +264,6 @@ func TestBuildFromResult_ComplexityAndBytes(t *testing.T) {
 	}
 	if goStats.MaxComplexity != 5 {
 		t.Errorf("expected max complexity 5, got %d", goStats.MaxComplexity)
-	}
-	if goStats.Bytes != 200 {
-		t.Errorf("expected bytes 200, got %d", goStats.Bytes)
 	}
 }
 

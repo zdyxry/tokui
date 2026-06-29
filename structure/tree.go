@@ -87,7 +87,6 @@ func (t *Tree) buildFromResult(result provider.Result, absPath string) error {
 			Blanks:        f.Blanks,
 			Complexity:    f.Complexity,
 			MaxComplexity: f.Complexity,
-			Bytes:         f.Bytes,
 		}
 	}
 

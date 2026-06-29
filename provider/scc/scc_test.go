@@ -16,7 +16,7 @@ func TestProviderInfo(t *testing.T) {
 	if info.Name != "scc" {
 		t.Errorf("expected name scc, got %q", info.Name)
 	}
-	wantCaps := provider.CapLines | provider.CapComplexity | provider.CapBytes
+	wantCaps := provider.CapLines | provider.CapComplexity
 	if info.Capabilities != wantCaps {
 		t.Errorf("expected capabilities %v, got %v", wantCaps, info.Capabilities)
 	}
@@ -48,9 +48,6 @@ func TestAnalyze_SingleFile(t *testing.T) {
 	}
 	if f.Complexity == 0 {
 		t.Error("expected non-zero complexity")
-	}
-	if f.Bytes == 0 {
-		t.Error("expected non-zero bytes")
 	}
 }
 

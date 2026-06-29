@@ -30,7 +30,7 @@ func (p *SCCProvider) Info() provider.Info {
 	return provider.Info{
 		Name:         "scc",
 		Version:      processor.Version,
-		Capabilities: provider.CapLines | provider.CapComplexity | provider.CapBytes,
+		Capabilities: provider.CapLines | provider.CapComplexity,
 	}
 }
 
@@ -107,7 +107,6 @@ func (p *SCCProvider) ParseStdin(data []byte) (provider.Result, error) {
 				Comments:   job.Comment,
 				Blanks:     job.Blank,
 				Complexity: job.Complexity,
-				Bytes:      job.Bytes,
 			})
 		}
 	}
@@ -155,7 +154,6 @@ func (p *SCCProvider) countFile(filePath string) (provider.FileStats, error) {
 		Comments:   job.Comment,
 		Blanks:     job.Blank,
 		Complexity: job.Complexity,
-		Bytes:      job.Bytes,
 	}, nil
 }
 

@@ -15,10 +15,7 @@ func TestCapabilityConstants(t *testing.T) {
 	if provider.CapComplexity != 2 {
 		t.Errorf("CapComplexity = %d, want 2", provider.CapComplexity)
 	}
-	if provider.CapBytes != 4 {
-		t.Errorf("CapBytes = %d, want 4", provider.CapBytes)
-	}
-	if provider.CapULOC != 8 {
+	if provider.CapULOC != 4 {
 		t.Errorf("CapULOC = %d, want 8", provider.CapULOC)
 	}
 }
@@ -30,7 +27,7 @@ func TestInfoCapabilities(t *testing.T) {
 	}
 
 	sccInfo := scc.New().Info()
-	want := provider.CapLines | provider.CapComplexity | provider.CapBytes
+	want := provider.CapLines | provider.CapComplexity
 	if sccInfo.Capabilities != want {
 		t.Errorf("scc capabilities = %v, want %v", sccInfo.Capabilities, want)
 	}

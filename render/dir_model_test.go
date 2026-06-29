@@ -182,9 +182,9 @@ func TestDirModelBuildChildComparator(t *testing.T) {
 func TestDirModelCycleSortColumn(t *testing.T) {
 	dm := newTestDirModel()
 	// newTestDirModel initializes sortState to SortByTotal, so the first cycle
-	// Starting from SortByTotal, the cycle is Percent, Complexity, Bytes,
+	// Starting from SortByTotal, the cycle is Percent, Complexity,
 	// Name, Languages, Code, Comments, Blanks, then wraps back to Total.
-	order := []SortKey{SortByPercent, SortByComplexity, SortByBytes, SortByName, SortByLanguages, SortByCode, SortByComments, SortByBlanks, SortByTotal}
+	order := []SortKey{SortByPercent, SortByComplexity, SortByName, SortByLanguages, SortByCode, SortByComments, SortByBlanks, SortByTotal}
 
 	for i := 0; i < len(order)*2; i++ {
 		expected := order[i%len(order)]
@@ -1096,7 +1096,7 @@ func TestTreemapViewHeight(t *testing.T) {
 func sccProviderInfo() provider.Info {
 	return provider.Info{
 		Name:         "scc",
-		Capabilities: provider.CapLines | provider.CapComplexity | provider.CapBytes,
+		Capabilities: provider.CapLines | provider.CapComplexity,
 	}
 }
 
@@ -1113,7 +1113,7 @@ func TestNewDirModel_DynamicColumns(t *testing.T) {
 	want := []SortKey{
 		SortByNone, SortByNone, SortByName, SortByLanguages,
 		SortByCode, SortByComments, SortByBlanks, SortByTotal,
-		SortByPercent, SortByComplexity, SortByBytes,
+		SortByPercent, SortByComplexity,
 	}
 	if len(got) != len(want) {
 		t.Fatalf("expected columns %v, got %v", want, got)
@@ -1144,7 +1144,7 @@ func TestVisibleColumns_NarrowHidesOptional(t *testing.T) {
 	cols := dm.visibleColumns()
 	for _, c := range cols {
 		switch c.SortKey {
-		case SortByComplexity, SortByBytes, SortByLanguages, SortByComments, SortByBlanks:
+		case SortByComplexity, SortByLanguages, SortByComments, SortByBlanks:
 			t.Errorf("expected %q to be hidden at width 50, but it was visible", c.SortKey)
 		}
 	}
@@ -1167,10 +1167,10 @@ func TestVisibleColumns_ActiveSortShownDespiteNarrow(t *testing.T) {
 	}
 }
 
-func TestBuildRow_WithComplexityAndBytes(t *testing.T) {
+func TestBuildRow_WithComplexity(t *testing.T) {
 	root := structure.NewDirEntry("root")
 	root.AddChild(structure.NewFileEntry("root/a.go", map[string]structure.CodeStats{
-		"Go": {Code: 20, Comments: 5, Blanks: 5, Complexity: 7, Bytes: 1234},
+		"Go": {Code: 20, Comments: 5, Blanks: 5, Complexity: 7},
 	}))
 	root.AggregateStats()
 
@@ -1192,7 +1192,6 @@ func TestBuildRow_WithComplexityAndBytes(t *testing.T) {
 		SortByTotal:      "30",
 		SortByPercent:    "100.00 %",
 		SortByComplexity: "7",
-		SortByBytes:      "1234",
 	}
 	for i, c := range dm.columns {
 		if wantVal, ok := want[c.SortKey]; ok && row[i] != wantVal {
@@ -1201,13 +1200,13 @@ func TestBuildRow_WithComplexityAndBytes(t *testing.T) {
 	}
 }
 
-func TestBuildChildComparator_ComplexityAndBytes(t *testing.T) {
+func TestBuildChildComparator_Complexity(t *testing.T) {
 	root := structure.NewDirEntry("root")
 	root.AddChild(structure.NewFileEntry("root/a.go", map[string]structure.CodeStats{
-		"Go": {Code: 10, Complexity: 5, Bytes: 100},
+		"Go": {Code: 10, Complexity: 5},
 	}))
 	root.AddChild(structure.NewFileEntry("root/b.go", map[string]structure.CodeStats{
-		"Go": {Code: 10, Complexity: 3, Bytes: 200},
+		"Go": {Code: 10, Complexity: 3},
 	}))
 	root.AggregateStats()
 
@@ -1217,12 +1216,6 @@ func TestBuildChildComparator_ComplexityAndBytes(t *testing.T) {
 	cmp := dm.buildChildComparator()
 	if cmp(root.Child[0], root.Child[1]) >= 0 {
 		t.Error("expected a.go (complexity 5) to come before b.go (complexity 3)")
-	}
-
-	dm.sortState = SortState{Key: SortByBytes, Desc: false}
-	cmp = dm.buildChildComparator()
-	if cmp(root.Child[0], root.Child[1]) >= 0 {
-		t.Error("expected a.go (bytes 100) to come before b.go (bytes 200)")
 	}
 }
 
@@ -1234,7 +1227,7 @@ func TestCycleTreemapSize_WithSCC(t *testing.T) {
 		true,
 	)
 
-	order := []SortKey{SortByTotal, SortByComplexity, SortByBytes}
+	order := []SortKey{SortByTotal, SortByComplexity}
 	for i := 0; i < len(order)*2; i++ {
 		expected := order[i%len(order)]
 		if dm.treemapSizeKey != expected {
@@ -1263,7 +1256,7 @@ func TestCycleTreemapSize_WithTokei(t *testing.T) {
 func TestTreemapSizeFunc(t *testing.T) {
 	root := structure.NewDirEntry("root")
 	root.AddChild(structure.NewFileEntry("root/a.go", map[string]structure.CodeStats{
-		"Go": {Code: 10, Comments: 2, Blanks: 3, Complexity: 5, Bytes: 1234},
+		"Go": {Code: 10, Comments: 2, Blanks: 3, Complexity: 5},
 	}))
 	root.AggregateStats()
 
@@ -1278,20 +1271,15 @@ func TestTreemapSizeFunc(t *testing.T) {
 	if got := dm.treemapSizeFunc()(root.Child[0]); got != 5 {
 		t.Errorf("Complexity size: expected 5, got %d", got)
 	}
-
-	dm.treemapSizeKey = SortByBytes
-	if got := dm.treemapSizeFunc()(root.Child[0]); got != 1234 {
-		t.Errorf("Bytes size: expected 1234, got %d", got)
-	}
 }
 
 func TestPercentColumn_ContextAware(t *testing.T) {
 	root := structure.NewDirEntry("root")
 	root.AddChild(structure.NewFileEntry("root/a.go", map[string]structure.CodeStats{
-		"Go": {Code: 10, Comments: 5, Blanks: 5, Complexity: 5, Bytes: 1000},
+		"Go": {Code: 10, Comments: 5, Blanks: 5, Complexity: 5},
 	}))
 	root.AddChild(structure.NewFileEntry("root/b.go", map[string]structure.CodeStats{
-		"Go": {Code: 30, Comments: 10, Blanks: 10, Complexity: 15, Bytes: 3000},
+		"Go": {Code: 30, Comments: 10, Blanks: 10, Complexity: 15},
 	}))
 	root.AggregateStats()
 
@@ -1306,7 +1294,6 @@ func TestPercentColumn_ContextAware(t *testing.T) {
 	}{
 		{SortByTotal, "71.43 %", "28.57 %"},
 		{SortByComplexity, "75.00 %", "25.00 %"},
-		{SortByBytes, "75.00 %", "25.00 %"},
 	}
 
 	for _, tt := range tests {

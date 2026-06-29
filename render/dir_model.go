@@ -148,9 +148,7 @@ func NewDirModel(nav *Navigation, info provider.Info, treeMode, treemapMode bool
 	if info.Capabilities&provider.CapComplexity != 0 {
 		columns = append(columns, Column{Title: "Complexity", SortKey: SortByComplexity})
 	}
-	if info.Capabilities&provider.CapBytes != 0 {
-		columns = append(columns, Column{Title: "Bytes", SortKey: SortByBytes})
-	}
+
 
 	// Keep only the name filter
 	defaultFilters := []filter.EntryFilter{
@@ -189,10 +187,6 @@ func (dm *DirModel) visibleColumns() []Column {
 		switch c.SortKey {
 		case SortByComplexity:
 			if dm.width < 80 && dm.sortState.Key != SortByComplexity {
-				continue
-			}
-		case SortByBytes:
-			if dm.width < 100 && dm.sortState.Key != SortByBytes {
 				continue
 			}
 		case SortByLanguages, SortByComments, SortByBlanks:
@@ -272,8 +266,6 @@ func (dm *DirModel) buildRow(cols []Column, entry *structure.Entry, name, langSt
 				row[i] = fmt.Sprintf("%.2f %%", percent)
 			case SortByComplexity:
 				row[i] = strconv.FormatInt(stats.Complexity, 10)
-			case SortByBytes:
-				row[i] = strconv.FormatInt(stats.Bytes, 10)
 			default:
 				row[i] = ""
 			}
@@ -968,10 +960,6 @@ func (dm *DirModel) buildChildComparator() func(a, b *structure.Entry) int {
 		return func(a, b *structure.Entry) int {
 			return cmpVal(getComparableStats(a).Complexity, getComparableStats(b).Complexity)
 		}
-	case SortByBytes:
-		return func(a, b *structure.Entry) int {
-			return cmpVal(getComparableStats(a).Bytes, getComparableStats(b).Bytes)
-		}
 	default:
 		return func(a, b *structure.Entry) int { return cmpVal(a.TotalStats.Total(), b.TotalStats.Total()) }
 	}
@@ -989,7 +977,6 @@ func (dm *DirModel) cycleSortColumn() {
 		SortByTotal,
 		SortByPercent,
 		SortByComplexity,
-		SortByBytes,
 	}
 
 	idx := -1
@@ -1028,8 +1015,6 @@ func (dm *DirModel) treemapSizeFunc() func(*structure.Entry) int64 {
 		switch dm.treemapSizeKey {
 		case SortByComplexity:
 			return stats.Complexity
-		case SortByBytes:
-			return stats.Bytes
 		default:
 			return stats.Total()
 		}
@@ -1043,9 +1028,7 @@ func (dm *DirModel) cycleTreemapSize() {
 	if dm.providerInfo.Capabilities&provider.CapComplexity != 0 {
 		order = append(order, SortByComplexity)
 	}
-	if dm.providerInfo.Capabilities&provider.CapBytes != 0 {
-		order = append(order, SortByBytes)
-	}
+
 
 	idx := 0
 	for i, k := range order {
@@ -1063,8 +1046,6 @@ func metricValue(stats structure.CodeStats, key SortKey) int64 {
 	switch key {
 	case SortByComplexity:
 		return stats.Complexity
-	case SortByBytes:
-		return stats.Bytes
 	default:
 		return stats.Total()
 	}
@@ -1336,9 +1317,6 @@ func (dm *DirModel) dirsSummary() string {
 		case SortByComplexity:
 			metricName = "COMPLEXITY"
 			metricValue = currentStats.Complexity
-		case SortByBytes:
-			metricName = "BYTES"
-			metricValue = currentStats.Bytes
 		}
 	}
 	metricStr := formatNumber(metricValue)

@@ -73,11 +73,11 @@
 
 按 `s` 会在以下列之间循环：
 
-`Name` → `Languages` → `Code` → `Comments` → `Blanks` → `Total` → `Percent` → `Complexity` → `Bytes`
+`Name` → `Languages` → `Code` → `Comments` → `Blanks` → `Total` → `Percent` → `Complexity`
 
 按 `S` 切换方向。文本列默认升序，数值列默认降序。
 
-`% of Parent` 列的分母会随当前排序列变化：默认按代码行数总计，按 `Complexity` 排序时按复杂度总计，按 `Bytes` 排序时按字节数总计。
+`% of Parent` 列的分母会随当前排序列变化：默认按代码行数总计，按 `Complexity` 排序时按复杂度总计。
 
 ---
 

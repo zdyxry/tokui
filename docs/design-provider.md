@@ -17,7 +17,7 @@ cmd/app.go
   └── render.DirModel
 ```
 
-如果引入 `scc`（github.com/boyter/scc）作为库，可以获得复杂度（Complexity）、字节数（Bytes）、ULOC 等指标。但 scc 本身也能统计行数，若与 tokei 同时跑两遍，会造成 IO 和计算重复。
+如果引入 `scc`（github.com/boyter/scc）作为库，可以获得复杂度（Complexity）、ULOC 等指标。但 scc 本身也能统计行数，若与 tokei 同时跑两遍，会造成 IO 和计算重复。
 
 因此需要把统计后端抽象为 **Provider**：
 
@@ -29,9 +29,9 @@ cmd/app.go
 
 ## 2. 关于“函数统计”的说明
 
-`scc` 官方输出字段为 `Files / Lines / Blanks / Comments / Code / Complexity / Bytes / ULOC / COCOMO`，**并不提供函数个数或函数级复杂度**。其 Complexity 是“文件级分支/循环计数”的近似 cyclomatic complexity。
+`scc` 官方输出字段为 `Files / Lines / Blanks / Comments / Code / Complexity / ULOC / COCOMO`，**并不提供函数个数或函数级复杂度**。其 Complexity 是“文件级分支/循环计数”的近似 cyclomatic complexity。
 
-因此本方案**第一阶段先引入 Complexity 与 Bytes**，函数统计若后续确实需要，再作为独立 Provider 能力接入（如 lizard、tree-sitter 等）。
+因此本方案**第一阶段先引入 Complexity**，函数统计若后续确实需要，再作为独立 Provider 能力接入（如 lizard、tree-sitter 等）。
 
 ---
 
@@ -47,7 +47,6 @@ type Capability uint
 const (
     CapLines Capability = 1 << iota
     CapComplexity
-    CapBytes
     CapULOC          // 后续按需扩展
 )
 
@@ -64,7 +63,6 @@ type FileStats struct {
     Comments   int64
     Blanks     int64
     Complexity int64   // 仅当 CapComplexity 时有效
-    Bytes      int64   // 仅当 CapBytes 时有效
 }
 
 type Result struct {
@@ -151,7 +149,7 @@ func (p *SCCProvider) Info() provider.Info {
     return provider.Info{
         Name:         "scc",
         Version:      "3.x", // 可读取 processor 内建版本或硬编码
-        Capabilities: provider.CapLines | provider.CapComplexity | provider.CapBytes,
+        Capabilities: provider.CapLines | provider.CapComplexity,
     }
 }
 ```
@@ -173,7 +171,6 @@ type CodeStats struct {
     Blanks       int64
     Complexity   int64   // 当前范围（文件/语言/目录）的复杂度总和
     MaxComplexity int64  // 当前范围内单文件最大复杂度（目录/多语言聚合时有用）
-    Bytes        int64
 }
 
 func (cs CodeStats) Total() int64 {
@@ -185,7 +182,6 @@ func (cs *CodeStats) Add(other CodeStats) {
     cs.Comments += other.Comments
     cs.Blanks += other.Blanks
     cs.Complexity += other.Complexity
-    cs.Bytes += other.Bytes
     if other.MaxComplexity > cs.MaxComplexity {
         cs.MaxComplexity = other.MaxComplexity
     }
@@ -209,7 +205,7 @@ func (t *Tree) BuildFromProviderResult(result provider.Result, root string) erro
 
 `BuildFromProviderResult` 接受已解析的 `provider.Result`，便于 pipe 模式下先读取 stdin、再做格式嗅探与解析。现有 `BuildFromTokei` / `BuildFromStdin` 由 Provider 选择替代。
 
-`AggregateStats` 需要把 `Complexity`、`MaxComplexity` 和 `Bytes` 同步向上聚合。
+`AggregateStats` 需要把 `Complexity`、`MaxComplexity` 同步向上聚合。
 
 ---
 
@@ -271,9 +267,6 @@ columns = append(columns, codeCol, commentsCol, blanksCol, totalCol, percentCol)
 if caps&provider.CapComplexity != 0 {
     columns = append(columns, complexityCol)
 }
-if caps&provider.CapBytes != 0 {
-    columns = append(columns, bytesCol)
-}
 ```
 
 ### 8.2 排序键扩展
@@ -283,7 +276,6 @@ if caps&provider.CapBytes != 0 {
 ```go
 const (
     SortByComplexity SortKey = "complexity"
-    SortByBytes      SortKey = "bytes"
 )
 ```
 
@@ -291,7 +283,6 @@ const (
 
 新增列会挤压 `Name` 列空间，加入按终端宽度自动隐藏策略：
 
-- 宽度 `< 100`：隐藏 `Bytes` 列。
 - 宽度 `< 80`：隐藏 `Complexity` 列。
 - 宽度 `< 60`：保持核心列（Name / Code / Total）可见，必要时隐藏 Languages / Comments / Blanks。
 
@@ -366,7 +357,7 @@ func parseStdinWithProvider(p provider.Provider, data []byte) (provider.Result, 
 
 ---
 
-## 10. Complexity / Bytes 与语言过滤的交互
+## 10. Complexity 与语言过滤的交互
 
 scc 的 Complexity 是文件级指标，但 `FileStats` 已包含 `Language` 字段，因此在构建 `StatsByLang` 时可以把该文件的 Complexity 归入其对应语言：
 
@@ -377,7 +368,6 @@ fileStats[relativePath][lang] = structure.CodeStats{
     Blanks:     r.Blanks,
     Complexity: r.Complexity,
     MaxComplexity: r.Complexity,
-    Bytes:      r.Bytes,
 }
 ```
 
@@ -387,7 +377,7 @@ fileStats[relativePath][lang] = structure.CodeStats{
 - 多语言过滤时，Complexity 显示选中语言的复杂度总和。
 - `All` 时显示全部语言复杂度总和。
 
-对于 tokei Provider（`CapLines`  only），Complexity 与 Bytes 列不显示，不存在交互问题。
+对于 tokei Provider（`CapLines`  only），Complexity 列不显示，不存在交互问题。
 
 ---
 
@@ -416,7 +406,7 @@ fileStats[relativePath][lang] = structure.CodeStats{
 10. 补充测试：
     - `TokeiProvider` / `SCCProvider` 接口符合性测试。
     - SCCProvider 结果映射到 `provider.FileStats`。
-    - `AggregateStats` 正确处理 Complexity / MaxComplexity / Bytes。
+    - `AggregateStats` 正确处理 Complexity / MaxComplexity。
     - 动态列在不同 `Capabilities` 与不同终端宽度下的渲染。
     - 路径归一化对 tokei 与 scc 路径的一致性。
     - pipe 模式自动识别与错误提示。

@@ -11,7 +11,6 @@ type Capability uint
 const (
 	CapLines Capability = 1 << iota
 	CapComplexity
-	CapBytes
 	CapULOC // reserved for future use
 )
 
@@ -30,7 +29,6 @@ type FileStats struct {
 	Comments   int64
 	Blanks     int64
 	Complexity int64 // valid when CapComplexity is set
-	Bytes      int64 // valid when CapBytes is set
 }
 
 // Result is the top-level output of an analysis run.

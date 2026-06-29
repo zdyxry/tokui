@@ -3,7 +3,7 @@
 [![Build](https://github.com/zdyxry/tokui/actions/workflows/build.yml/badge.svg)](https://github.com/zdyxry/tokui/actions/workflows/build.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/zdyxry/tokui)](https://goreportcard.com/report/github.com/zdyxry/tokui)
 
-**Tokui** is a high-performance, cross-platform command-line tool for visualizing and exploring code statistics. It integrates with the powerful code statistics engine [tokei](https://github.com/XAMPPRocky/tokei) by default, and also supports [scc](https://github.com/boyter/scc) as an optional backend, to present code line count, complexity, and byte metrics through a responsive, keyboard-driven Terminal User Interface (TUI), helping you quickly analyze code composition and understand project structure.
+**Tokui** is a high-performance, cross-platform command-line tool for visualizing and exploring code statistics. It integrates with the powerful code statistics engine [tokei](https://github.com/XAMPPRocky/tokei) by default, and also supports [scc](https://github.com/boyter/scc) as an optional backend, to present code line count and complexity metrics through a responsive, keyboard-driven Terminal User Interface (TUI), helping you quickly analyze code composition and understand project structure.
 
 > **Project Origin**
 >
@@ -22,7 +22,7 @@ Screenshots below show `tokui` analyzing the [Prometheus](https://github.com/pro
 ## ✨ Features
 
 - **Interactive Terminal UI**: Navigate, filter, and explore your project with an intuitive keyboard-driven interface.
-- **Multiple Stats Providers**: Use `tokei` (default) for line counts, or switch to `scc` for complexity and bytes metrics.
+- **Multiple Stats Providers**: Use `tokei` (default) for line counts, or switch to `scc` for complexity metrics.
 - **Deep Tokei Integration**: Leverages `tokei` for accurate lines of code, comments, blanks, and total lines, categorized by language.
 - **File Preview**: Press `Enter` on any file to instantly preview its contents in a scrollable overlay window.
 - **Language Filtering**: Filter by a single language (`Tab`), or select multiple languages via the multi-select overlay (`Ctrl+L`).
@@ -87,7 +87,7 @@ Tokui automatically invokes the selected provider (`tokei` by default) to analyz
 # Analyze the current directory with tokei
 tokui
 
-# Analyze with scc for complexity/bytes metrics
+# Analyze with scc for complexity metrics
 tokui --provider scc
 
 # Analyze a specific directory
@@ -105,7 +105,7 @@ tokei -o json . | tokui
 # Analyze a specific directory and exclude node_modules
 tokei -o json --exclude node_modules . | tokui
 
-# Or use scc for complexity/bytes metrics
+# Or use scc for complexity metrics
 scc --by-file -f json . | tokui
 ```
 
