@@ -127,6 +127,22 @@ func TestFilePreviewUpdate(t *testing.T) {
 			t.Errorf("expected viewport to scroll down, got YOffset %d -> %d", before, fp.viewport.YOffset)
 		}
 	})
+
+	t.Run("home key jumps to top", func(t *testing.T) {
+		fp.viewport.YOffset = 10
+		fp.Update(tea.KeyMsg{Type: tea.KeyHome})
+		if fp.viewport.YOffset != 0 {
+			t.Errorf("expected home to jump to top, got YOffset %d", fp.viewport.YOffset)
+		}
+	})
+
+	t.Run("end key jumps to bottom", func(t *testing.T) {
+		fp.viewport.YOffset = 0
+		fp.Update(tea.KeyMsg{Type: tea.KeyEnd})
+		if !fp.viewport.AtBottom() {
+			t.Errorf("expected end to jump to bottom, got YOffset %d", fp.viewport.YOffset)
+		}
+	})
 }
 
 func TestFilePreviewView(t *testing.T) {

@@ -76,9 +76,10 @@ type DirModel struct {
 	langFilterIdx int // -1 represents "All", 0+ represents index in languages slice
 	filePreview   *FilePreview
 	// Language select state
-	selectMode    bool
-	selectedLangs map[string]bool
-	selectIndex   int
+	selectMode          bool
+	selectedLangs       map[string]bool
+	selectLangsSnapshot map[string]bool
+	selectIndex         int
 	err           error
 	tokeiVersion  string
 	tableEntries  []*tableEntry
@@ -178,6 +179,18 @@ func newSearchInput() textinput.Model {
 	ti.PromptStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#ebbd34"))
 	ti.TextStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#ebbd34"))
 	return ti
+}
+
+// copyLangSelection returns a shallow copy of the given language selection map.
+func copyLangSelection(src map[string]bool) map[string]bool {
+	if src == nil {
+		return nil
+	}
+	dst := make(map[string]bool, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
 }
 
 func (dm *DirModel) ToggleTreeMode() {
@@ -469,9 +482,13 @@ func (dm *DirModel) handleKeyBindings(msg tea.KeyMsg) (tea.Cmd, bool) {
 		switch bk {
 		case cancel:
 			return nil, false
-		case escape, toggleLangSelect:
+		case escape, toggleLangSelect, quit:
+			// Cancel: revert any unconfirmed language selections made this session.
+			dm.selectedLangs = copyLangSelection(dm.selectLangsSnapshot)
+			dm.selectLangsSnapshot = nil
 			dm.mode = READY
 			dm.selectMode = false
+			dm.updateTableData()
 			return nil, true
 		case "up", "k":
 			if dm.selectIndex > 0 {
@@ -490,6 +507,8 @@ func (dm *DirModel) handleKeyBindings(msg tea.KeyMsg) (tea.Cmd, bool) {
 			}
 			return nil, true
 		case enter:
+			// Confirm: keep current selections and clear the snapshot.
+			dm.selectLangsSnapshot = nil
 			dm.mode = READY
 			dm.selectMode = false
 			dm.updateTableData()
@@ -499,19 +518,18 @@ func (dm *DirModel) handleKeyBindings(msg tea.KeyMsg) (tea.Cmd, bool) {
 		}
 	}
 
-	// Quick search (/ key): activate name filter mode
-	if bk == quickSearch {
-		if dm.mode != INPUT {
-			dm.mode = INPUT
-			// If the filter is not enabled, enable it
-			if f, ok := dm.filters[filter.NameFilterID].(*filter.NameFilter); ok {
-				if !f.IsEnabled() {
-					dm.filters.ToggleFilter(filter.NameFilterID)
-				}
-				f.ClearInput() // Only clear input content, don't disable the filter
+	// Quick search (/ key): activate name filter mode when not already filtering.
+	// When in INPUT mode, let "/" pass through as a normal filter character.
+	if bk == quickSearch && dm.mode != INPUT {
+		dm.mode = INPUT
+		// If the filter is not enabled, enable it
+		if f, ok := dm.filters[filter.NameFilterID].(*filter.NameFilter); ok {
+			if !f.IsEnabled() {
+				dm.filters.ToggleFilter(filter.NameFilterID)
 			}
-			dm.updateTableData()
+			f.ClearInput() // Only clear input content, don't disable the filter
 		}
+		dm.updateTableData()
 		return nil, true
 	}
 
@@ -633,6 +651,7 @@ func (dm *DirModel) handleKeyBindings(msg tea.KeyMsg) (tea.Cmd, bool) {
 		dm.mode = SELECT_LANG
 		dm.selectMode = true
 		dm.selectIndex = 0
+		dm.selectLangsSnapshot = copyLangSelection(dm.selectedLangs)
 		return nil, true
 	case toggleLangFilter:
 		// Send message to toggle language filter

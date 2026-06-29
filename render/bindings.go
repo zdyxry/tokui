@@ -43,8 +43,6 @@ const (
 	toggleTreemapColor bindingKey = "c"
 	cycleSortColumn    bindingKey = "s"
 	toggleSortOrder    bindingKey = "S"
-	left               bindingKey = "left"
-	right              bindingKey = "right"
 )
 
 var toggleHelpBinding = key.NewBinding(
@@ -147,7 +145,7 @@ var dirsKeyMap = [][]key.Binding{
 			key.WithKeys(toggleLangFilter.String()),
 			key.WithHelp(
 				bindKeyStyle.Render(toggleLangFilter.String()),
-				helpDescStyle.Render(" - Toggle language filter"),
+				helpDescStyle.Render(" - Cycle language filter"),
 			),
 		),
 		key.NewBinding(
