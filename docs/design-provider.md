@@ -47,7 +47,6 @@ type Capability uint
 const (
     CapLines Capability = 1 << iota
     CapComplexity
-    CapULOC          // 后续按需扩展
 )
 
 type Info struct {

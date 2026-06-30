@@ -11,7 +11,6 @@ type Capability uint
 const (
 	CapLines Capability = 1 << iota
 	CapComplexity
-	CapULOC // reserved for future use
 )
 
 // Info describes a Provider implementation.

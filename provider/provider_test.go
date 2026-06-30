@@ -15,9 +15,6 @@ func TestCapabilityConstants(t *testing.T) {
 	if provider.CapComplexity != 2 {
 		t.Errorf("CapComplexity = %d, want 2", provider.CapComplexity)
 	}
-	if provider.CapULOC != 4 {
-		t.Errorf("CapULOC = %d, want 4", provider.CapULOC)
-	}
 }
 
 func TestInfoCapabilities(t *testing.T) {
