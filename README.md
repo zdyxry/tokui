@@ -90,6 +90,10 @@ tokui
 # Analyze with scc for complexity metrics
 tokui --provider scc
 
+# Or set the provider via environment variable
+export TOKUI_PROVIDER=scc
+tokui
+
 # Analyze a specific directory
 tokui /path/to/your/project
 ```
@@ -117,7 +121,7 @@ Usage:
 
 Flags:
   -r, --root string    Specify the root directory to analyze. Defaults to the current directory ".".
-      --provider       Stats provider: tokei|scc. Defaults to tokei.
+      --provider       Stats provider: tokei|scc. Defaults to tokei; can be set via TOKUI_PROVIDER env var.
   -t, --tree           Start in tree mode. Directories are expandable inline instead of navigable.
       --treemap        Start in treemap mode. Show proportional blocks instead of a table.
   -h, --help           Show help information

@@ -79,7 +79,7 @@ func init() {
 		&providerName,
 		"provider",
 		"tokei",
-		`Stats provider: tokei|scc. Defaults to tokei for backward compatibility.`,
+		`Stats provider: tokei|scc. Defaults to "tokei"; can be overridden with the TOKUI_PROVIDER environment variable.`,
 	)
 	appCmd.MarkFlagsMutuallyExclusive("tree", "treemap")
 }
@@ -96,7 +96,7 @@ func Execute() {
 	}
 }
 
-func runApp(_ *cobra.Command, args []string) error {
+func runApp(cmd *cobra.Command, args []string) error {
 	defer func() {
 		if r := recover(); r != nil {
 			err, ok := r.(error)
@@ -107,7 +107,8 @@ func runApp(_ *cobra.Command, args []string) error {
 		}
 	}()
 
-	p, err := selectProvider(providerName)
+	selectedProvider := resolveProvider(cmd)
+	p, err := selectProvider(selectedProvider)
 	if err != nil {
 		return err
 	}
@@ -122,7 +123,7 @@ func runApp(_ *cobra.Command, args []string) error {
 
 	// If there is pipe input, use pipe mode
 	if (stat.Mode() & os.ModeCharDevice) == 0 {
-		if err := runPipeMode(tree, p); err != nil {
+		if err := runPipeMode(tree, p, selectedProvider); err != nil {
 			return fmt.Errorf("error reading provider output from pipe: %w", err)
 		}
 	} else {
@@ -177,15 +178,28 @@ func selectProvider(name string) (provider.Provider, error) {
 	}
 }
 
+// resolveProvider returns the effective provider name using the precedence:
+// 1. Explicit --provider flag, 2. TOKUI_PROVIDER environment variable,
+// 3. Default "tokei".
+func resolveProvider(cmd *cobra.Command) string {
+	if cmd.Flags().Changed("provider") {
+		return providerName
+	}
+	if env := os.Getenv("TOKUI_PROVIDER"); env != "" {
+		return env
+	}
+	return "tokei"
+}
+
 // runPipeMode reads stdin once and either uses the selected provider or
 // attempts to auto-detect the format.
-func runPipeMode(tree *structure.Tree, p provider.Provider) error {
+func runPipeMode(tree *structure.Tree, p provider.Provider, explicitProvider string) error {
 	data, err := io.ReadAll(os.Stdin)
 	if err != nil {
 		return fmt.Errorf("failed to read stdin: %w", err)
 	}
 
-	result, _, err := parseStdinWithProvider(p, data)
+	result, _, err := parseStdinWithProvider(p, data, explicitProvider)
 	if err != nil {
 		return err
 	}
@@ -198,14 +212,14 @@ func runPipeMode(tree *structure.Tree, p provider.Provider) error {
 // parseStdinWithProvider tries to parse stdin data with the requested provider.
 // If parsing fails and the user kept the default "tokei" provider, it attempts
 // auto-detection across all known providers before returning a clear error.
-func parseStdinWithProvider(p provider.Provider, data []byte) (provider.Result, provider.Provider, error) {
+func parseStdinWithProvider(p provider.Provider, data []byte, explicitProvider string) (provider.Result, provider.Provider, error) {
 	result, err := p.ParseStdin(data)
 	if err == nil {
 		return result, p, nil
 	}
 
 	// If the user explicitly selected a non-default provider, do not auto-detect.
-	if providerName != "tokei" {
+	if explicitProvider != "tokei" {
 		return provider.Result{}, nil, fmt.Errorf(
 			"stdin could not be parsed with provider %q: %w; ensure the pipe output matches the provider's expected format",
 			p.Info().Name, err,

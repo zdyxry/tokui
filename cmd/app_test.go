@@ -3,10 +3,22 @@ package cmd
 import (
 	"testing"
 
+	"github.com/spf13/cobra"
 	"github.com/zdyxry/tokui/provider"
 	"github.com/zdyxry/tokui/provider/scc"
 	"github.com/zdyxry/tokui/tokei"
 )
+
+func newTestCommand() *cobra.Command {
+	cmd := &cobra.Command{Use: "test"}
+	cmd.PersistentFlags().StringVar(
+		&providerName,
+		"provider",
+		"tokei",
+		"Stats provider: tokei|scc.",
+	)
+	return cmd
+}
 
 func TestSelectProvider(t *testing.T) {
 	tests := []struct {
@@ -38,8 +50,43 @@ func TestSelectProvider(t *testing.T) {
 	}
 }
 
+func TestResolveProvider(t *testing.T) {
+	t.Run("default to tokei", func(t *testing.T) {
+		t.Setenv("TOKUI_PROVIDER", "")
+		cmd := newTestCommand()
+		if got := resolveProvider(cmd); got != "tokei" {
+			t.Errorf("expected tokei, got %q", got)
+		}
+	})
+
+	t.Run("env variable overrides default", func(t *testing.T) {
+		t.Setenv("TOKUI_PROVIDER", "scc")
+		cmd := newTestCommand()
+		if got := resolveProvider(cmd); got != "scc" {
+			t.Errorf("expected scc, got %q", got)
+		}
+	})
+
+	t.Run("flag overrides env variable", func(t *testing.T) {
+		t.Setenv("TOKUI_PROVIDER", "scc")
+		cmd := newTestCommand()
+		_ = cmd.ParseFlags([]string{"--provider", "tokei"})
+		if got := resolveProvider(cmd); got != "tokei" {
+			t.Errorf("expected tokei from flag, got %q", got)
+		}
+	})
+
+	t.Run("invalid env falls through to default", func(t *testing.T) {
+		t.Setenv("TOKUI_PROVIDER", "")
+		cmd := newTestCommand()
+		_ = cmd.ParseFlags([]string{"--provider", "tokei"})
+		if got := resolveProvider(cmd); got != "tokei" {
+			t.Errorf("expected tokei, got %q", got)
+		}
+	})
+}
+
 func TestParseStdinWithProvider_TokeiData(t *testing.T) {
-	providerName = "tokei"
 	data := []byte(`{
 		"Go": {
 			"blanks": 5,
@@ -54,7 +101,7 @@ func TestParseStdinWithProvider_TokeiData(t *testing.T) {
 		}
 	}`)
 
-	result, used, err := parseStdinWithProvider(tokei.New(), data)
+	result, used, err := parseStdinWithProvider(tokei.New(), data, "tokei")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -67,7 +114,6 @@ func TestParseStdinWithProvider_TokeiData(t *testing.T) {
 }
 
 func TestParseStdinWithProvider_AutoDetectSCC(t *testing.T) {
-	providerName = "tokei"
 	data := []byte(`[
 		{
 			"Name": "Go",
@@ -91,7 +137,7 @@ func TestParseStdinWithProvider_AutoDetectSCC(t *testing.T) {
 		}
 	]`)
 
-	result, used, err := parseStdinWithProvider(tokei.New(), data)
+	result, used, err := parseStdinWithProvider(tokei.New(), data, "tokei")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -104,7 +150,6 @@ func TestParseStdinWithProvider_AutoDetectSCC(t *testing.T) {
 }
 
 func TestParseStdinWithProvider_ExplicitProviderNoAutoDetect(t *testing.T) {
-	providerName = "scc"
 	// Pass tokei-shaped data to the explicitly selected scc provider.
 	data := []byte(`{
 		"Go": {
@@ -115,15 +160,14 @@ func TestParseStdinWithProvider_ExplicitProviderNoAutoDetect(t *testing.T) {
 		}
 	}`)
 
-	_, _, err := parseStdinWithProvider(scc.New(), data)
+	_, _, err := parseStdinWithProvider(scc.New(), data, "scc")
 	if err == nil {
 		t.Fatal("expected error when explicit scc provider receives tokei data")
 	}
 }
 
 func TestParseStdinWithProvider_UnrecognizedFormat(t *testing.T) {
-	providerName = "tokei"
-	_, _, err := parseStdinWithProvider(tokei.New(), []byte(`not json`))
+	_, _, err := parseStdinWithProvider(tokei.New(), []byte(`not json`), "tokei")
 	if err == nil {
 		t.Fatal("expected error for unrecognized stdin format")
 	}
@@ -132,3 +176,6 @@ func TestParseStdinWithProvider_UnrecognizedFormat(t *testing.T) {
 // Ensure the concrete providers satisfy the abstract interface at compile time.
 var _ provider.Provider = tokei.New()
 var _ provider.Provider = scc.New()
+
+// Verify the real app command exposes the provider flag for resolveProvider.
+var _ = appCmd.Flags().Lookup("provider")
