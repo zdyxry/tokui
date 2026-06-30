@@ -98,7 +98,11 @@ func TestAnalyze_RespectsGitIgnore(t *testing.T) {
 	}
 
 	if len(result.Files) != 1 {
-		t.Fatalf("expected 1 file (kept.go), got %d", len(result.Files))
+		paths := make([]string, len(result.Files))
+		for i, f := range result.Files {
+			paths[i] = f.Path
+		}
+		t.Fatalf("expected 1 file (kept.go), got %d: %v", len(result.Files), paths)
 	}
 	if result.Files[0].Path != filepath.Join(dir, "kept.go") {
 		t.Errorf("expected kept.go, got %q", result.Files[0].Path)
