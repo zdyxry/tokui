@@ -132,16 +132,37 @@ func (t *Tree) addFileToTree(root *Entry, relativePath string, stats map[string]
 // relative to the analysis root. It handles slash normalization and removes
 // leading "./" or "/" prefixes that tools like tokei may produce.
 func normalizePath(root, raw string) string {
-	if !filepath.IsAbs(raw) {
-		if abs, err := filepath.Abs(raw); err == nil {
-			raw = abs
-		}
-	}
 	root = filepath.ToSlash(root)
 	raw = filepath.ToSlash(raw)
 	raw = strings.TrimPrefix(raw, "./")
-	rel := strings.TrimPrefix(raw, root)
-	rel = strings.TrimPrefix(rel, "/")
+
+	// If the raw path is already under the root (including Unix-style absolute
+	// paths on Windows), trim the root directly.
+	if strings.HasPrefix(raw, root) {
+		rel := strings.TrimPrefix(raw, root)
+		rel = strings.TrimPrefix(rel, "/")
+		rel = strings.TrimPrefix(rel, "./")
+		return rel
+	}
+
+	// Otherwise, if the path is relative, resolve it against the current
+	// working directory and try again. This handles walkers that return paths
+	// relative to the working directory while the analysis root is absolute.
+	if !filepath.IsAbs(raw) {
+		if abs, err := filepath.Abs(raw); err == nil {
+			absRaw := filepath.ToSlash(abs)
+			if strings.HasPrefix(absRaw, root) {
+				rel := strings.TrimPrefix(absRaw, root)
+				rel = strings.TrimPrefix(rel, "/")
+				rel = strings.TrimPrefix(rel, "./")
+				return rel
+			}
+		}
+	}
+
+	// No root prefix matched; still clean up any leading slash that may have
+	// been produced by tools emitting double separators.
+	rel := strings.TrimPrefix(raw, "/")
 	rel = strings.TrimPrefix(rel, "./")
 	return rel
 }
