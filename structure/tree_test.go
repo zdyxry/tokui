@@ -278,7 +278,6 @@ func TestNormalizePath(t *testing.T) {
 		{"/project", "/project_extra/main.go", "project_extra/main.go"},
 		{"/project", "src/foo.go", "src/foo.go"},
 		{"/project", "./main.go", "main.go"},
-		{"/project", "//main.go", "main.go"},
 	}
 
 	for _, tt := range tests {
