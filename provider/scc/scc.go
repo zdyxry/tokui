@@ -203,8 +203,11 @@ func (p *SCCProvider) ignoredByGitIgnore(filePath string, cache map[string]gitig
 			}
 			cache[dir] = ignore
 		}
-		if ignore != nil && ignore.Ignore(filePath) {
-			return true
+		if ignore != nil {
+			rel, err := filepath.Rel(dir, filePath)
+			if err == nil && ignore.Relative(rel, false) != nil {
+				return true
+			}
 		}
 
 		parent := filepath.Dir(dir)
