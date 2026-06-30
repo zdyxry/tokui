@@ -3,14 +3,15 @@ package render
 type SortKey string
 
 const (
-	SortByNone      SortKey = ""
-	SortByName      SortKey = "name"
-	SortByLanguages SortKey = "languages"
-	SortByCode      SortKey = "code"
-	SortByComments  SortKey = "comments"
-	SortByBlanks    SortKey = "blanks"
-	SortByTotal     SortKey = "total"
-	SortByPercent   SortKey = "percent"
+	SortByNone       SortKey = ""
+	SortByName       SortKey = "name"
+	SortByLanguages  SortKey = "languages"
+	SortByCode       SortKey = "code"
+	SortByComments   SortKey = "comments"
+	SortByBlanks     SortKey = "blanks"
+	SortByTotal      SortKey = "total"
+	SortByPercent    SortKey = "percent"
+	SortByComplexity SortKey = "complexity"
 )
 
 type Column struct {

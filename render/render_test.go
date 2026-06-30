@@ -3,6 +3,7 @@ package render
 import (
 	"testing"
 
+	"github.com/zdyxry/tokui/provider"
 	"github.com/zdyxry/tokui/structure"
 )
 
@@ -15,7 +16,7 @@ func TestTreemapDrillDownRejectsParentPath(t *testing.T) {
 	root.AggregateStats()
 
 	nav := NewCodeNavigation(structure.NewTree(root))
-	dm := NewDirModel(nav, "", false, true)
+	dm := NewDirModel(nav, provider.Info{Name: "test"}, false, true)
 	dm.treemapBlocks = []treemapBlock{
 		{entry: &structure.Entry{Path: "/foo", IsDir: true}, level: 0, topIdx: 0},
 	}
@@ -39,7 +40,7 @@ func TestTreemapDrillDownNavigatesIntoChild(t *testing.T) {
 	root.AggregateStats()
 
 	nav := NewCodeNavigation(structure.NewTree(root))
-	dm := NewDirModel(nav, "", false, true)
+	dm := NewDirModel(nav, provider.Info{Name: "test"}, false, true)
 	dm.treemapBlocks = []treemapBlock{
 		{entry: sub, level: 0, topIdx: 0},
 	}

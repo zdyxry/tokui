@@ -5,11 +5,9 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/help"
-	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
 )
 
 type ScanFinished struct {
@@ -250,21 +248,6 @@ func (vm *ViewModel) levelUp() {
 		vm.dirModel.treemapSelected = 0
 		vm.dirModel.Update(ScanFinished{ResetCursor: true})
 	}
-}
-
-// NewProgressBar creates a custom styled progress bar (currently unused)
-func NewProgressBar(width int, full, empty rune) progress.Model {
-	maxCharLen := max(
-		lipgloss.Width(string(full)),
-		lipgloss.Width(string(empty)),
-	)
-
-	return progress.New(
-		progress.WithColorProfile(termenv.Ascii),
-		progress.WithWidth(width/maxCharLen),
-		progress.WithFillCharacters(full, empty),
-		progress.WithoutPercentage(),
-	)
 }
 
 func buildTable() *table.Model {

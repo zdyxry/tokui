@@ -1,152 +1,98 @@
-// structure/tree.go
+// Package structure builds the in-memory file tree from a provider.Result and
+// aggregates per-directory statistics.
 package structure
 
 import (
 	"path/filepath"
 	"strings"
 
-	"github.com/zdyxry/tokui/tokei"
+	"github.com/zdyxry/tokui/provider"
 )
 
+// Tree represents the code statistics file tree.
 type Tree struct {
 	root *Entry
 }
 
+// NewTree creates a new Tree with the given root entry.
 func NewTree(root *Entry) *Tree {
 	return &Tree{root: root}
 }
 
+// Root returns the current root entry.
 func (t *Tree) Root() *Entry {
 	return t.root
 }
 
+// SetRoot replaces the root entry.
 func (t *Tree) SetRoot(root *Entry) {
 	t.root = root
 }
 
-// BuildFromTokei builds the file tree from tokei's output for the given path
-func (t *Tree) BuildFromTokei(path string) error {
-	report, err := tokei.Analyze(path)
+// BuildFromProvider analyzes the given path using the supplied Provider and
+// builds the file tree from the returned per-file statistics.
+func (t *Tree) BuildFromProvider(p provider.Provider, path string) error {
+	result, err := p.Analyze(path)
 	if err != nil {
 		return err
 	}
 
-	// 1. Get the absolute path of the analysis path for reliable prefix trimming.
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		// If the path cannot be resolved, this is usually a serious issue and should stop here.
-		return err
-	}
-
-	// 2. The root node uses the user-provided original path (which might be "." or an absolute path).
-	//    This is to correctly display the user input in the UI status bar.
+	// Use the user-provided original path for the root node so the UI status
+	// bar displays what the user typed (e.g. "." or an absolute path).
 	t.root = NewDirEntry(path)
 
-	fileStats := make(map[string]map[string]CodeStats)
-
-	// 3. Collect statistics for all files and perform path normalization.
-	for lang, stats := range report {
-		if lang == "Total" { // "Total" is tokei's aggregate statistics, we calculate ourselves, so skip
-			continue
-		}
-		for _, fileReport := range stats.Reports {
-			// 4. *** Core logic: Path normalization ***
-			//    Goal: Uniformly convert paths returned by tokei (which may be absolute or relative)
-			//    to relative paths relative to the analysis root directory.
-
-			// Convert both the tokei-returned file path and our absolute analysis path to use '/' separators for reliable comparison and trimming.
-			tokeiFilePath := filepath.ToSlash(fileReport.Name)
-			absAnalysisPath := filepath.ToSlash(absPath)
-
-			// Trim the absolute path prefix to get the relative path.
-			// For example, convert "/path/to/project/src/main.go" to "src/main.go".
-			// `TrimPrefix` is case-sensitive, which is the correct behavior on most file systems.
-			relativePath := strings.TrimPrefix(tokeiFilePath, absAnalysisPath)
-
-			// Remove possible leading slash to ensure the path is purely relative.
-			relativePath = strings.TrimPrefix(relativePath, "/")
-
-			// Ignore the "./" prefix that tokei might produce when analyzing ".".
-			relativePath = strings.TrimPrefix(relativePath, "./")
-
-			// Now `relativePath` is always in the form like "src/main.go" or "README.md".
-
-			if _, ok := fileStats[relativePath]; !ok {
-				fileStats[relativePath] = make(map[string]CodeStats)
-			}
-			fileStats[relativePath][lang] = CodeStats{
-				Code:     fileReport.Stats.Code,
-				Comments: fileReport.Stats.Comments,
-				Blanks:   fileReport.Stats.Blanks,
-			}
-		}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return err
 	}
 
-	// 5. Iterate through all files and add them to the correct position in the tree.
-	//    Here `filePath` is the `relativePath` we processed above.
-	for filePath, stats := range fileStats {
-		t.addFileToTree(t.root, filePath, stats)
+	if err := t.buildFromResult(result, absPath); err != nil {
+		return err
 	}
-
-	// 6. Aggregate statistics for all directories.
 	t.root.AggregateStats()
-
 	return nil
 }
 
-func (t *Tree) BuildFromStdin() error {
-	report, err := tokei.AnalyzeFromStdin()
+// BuildFromProviderResult builds the file tree from an already-parsed
+// provider.Result. The root path is used for path normalization.
+func (t *Tree) BuildFromProviderResult(result provider.Result, root string) error {
+	absPath, err := filepath.Abs(root)
 	if err != nil {
 		return err
 	}
 
-	// When reading from stdin, we don't have an analysis path, so use the current directory as the root node
-	t.root = NewDirEntry(".")
+	t.root = NewDirEntry(root)
 
+	if err := t.buildFromResult(result, absPath); err != nil {
+		return err
+	}
+	t.root.AggregateStats()
+	return nil
+}
+
+// buildFromResult groups per-file stats by relative path and inserts them into
+// the tree using the provided analysis root for path normalization.
+func (t *Tree) buildFromResult(result provider.Result, absPath string) error {
 	fileStats := make(map[string]map[string]CodeStats)
 
-	// Collect statistics for all files
-	for lang, stats := range report {
-		if lang == "Total" { // "Total" is tokei's aggregate statistics, we calculate ourselves, so skip
-			continue
+	for _, f := range result.Files {
+		relativePath := normalizePath(absPath, f.Path)
+
+		if _, ok := fileStats[relativePath]; !ok {
+			fileStats[relativePath] = make(map[string]CodeStats)
 		}
-		for _, fileReport := range stats.Reports {
-			// When reading from stdin, file paths should already be relative or absolute paths
-			// We need to normalize them to relative paths
-			filePath := fileReport.Name
-
-			// Remove possible leading "./"
-			filePath = strings.TrimPrefix(filePath, "./")
-
-			// If it's an absolute path, try to extract the relative part
-			if filepath.IsAbs(filePath) {
-				// Try to get the current working directory
-				if wd, err := filepath.Abs("."); err == nil {
-					if rel, err := filepath.Rel(wd, filePath); err == nil {
-						filePath = rel
-					}
-				}
-			}
-
-			if _, ok := fileStats[filePath]; !ok {
-				fileStats[filePath] = make(map[string]CodeStats)
-			}
-			fileStats[filePath][lang] = CodeStats{
-				Code:     fileReport.Stats.Code,
-				Comments: fileReport.Stats.Comments,
-				Blanks:   fileReport.Stats.Blanks,
-			}
+		fileStats[relativePath][f.Language] = CodeStats{
+			Code:          f.Code,
+			Comments:      f.Comments,
+			Blanks:        f.Blanks,
+			Complexity:    f.Complexity,
+			MaxComplexity: f.Complexity,
 		}
 	}
 
-	// Iterate through all files and add them to the correct position in the tree
 	for filePath, stats := range fileStats {
 		t.addFileToTree(t.root, filePath, stats)
 	}
-
-	// Aggregate statistics for all directories
-	t.root.AggregateStats()
-
 	return nil
 }
 
@@ -180,4 +126,52 @@ func (t *Tree) addFileToTree(root *Entry, relativePath string, stats map[string]
 			currentNode.AddChild(fileEntry)
 		}
 	}
+}
+
+// normalizePath converts a raw file path (absolute or relative) to a path
+// relative to the analysis root. It handles slash normalization and removes
+// leading "./" or "/" prefixes that tools like tokei may produce.
+func normalizePath(root, raw string) string {
+	root = filepath.ToSlash(filepath.Clean(root))
+	raw = filepath.ToSlash(filepath.Clean(raw))
+
+	if raw == root {
+		return ""
+	}
+
+	prefix := root
+	if !strings.HasSuffix(prefix, "/") {
+		prefix += "/"
+	}
+
+	// If the raw path is already under the root (including Unix-style absolute
+	// paths on Windows), trim the root directly.
+	if strings.HasPrefix(raw, prefix) {
+		rel := strings.TrimPrefix(raw, prefix)
+		rel = strings.TrimPrefix(rel, "./")
+		return rel
+	}
+
+	// Otherwise, if the path is relative, resolve it against the current
+	// working directory and try again. This handles walkers that return paths
+	// relative to the working directory while the analysis root is absolute.
+	if !filepath.IsAbs(raw) {
+		if abs, err := filepath.Abs(raw); err == nil {
+			absRaw := filepath.ToSlash(filepath.Clean(abs))
+			if absRaw == root {
+				return ""
+			}
+			if strings.HasPrefix(absRaw, prefix) {
+				rel := strings.TrimPrefix(absRaw, prefix)
+				rel = strings.TrimPrefix(rel, "./")
+				return rel
+			}
+		}
+	}
+
+	// No root prefix matched; still clean up any leading slash that may have
+	// been produced by tools emitting double separators.
+	rel := strings.TrimPrefix(raw, "/")
+	rel = strings.TrimPrefix(rel, "./")
+	return rel
 }
