@@ -3,6 +3,7 @@
 package scc
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/boyter/gocodewalker"
+	"github.com/boyter/gocodewalker/go-gitignore"
 	"github.com/boyter/scc/v3/processor"
 	"github.com/zdyxry/tokui/provider"
 )
@@ -143,9 +145,10 @@ func (p *SCCProvider) countFile(filePath string) (provider.FileStats, error) {
 	}, nil
 }
 
-// walkDirectory walks the directory tree using gocodewalker, which respects
-// .gitignore, .ignore and .gitmodules files by default. It returns per-file
-// stats for every file the walker yields.
+// walkDirectory walks the directory tree using gocodewalker. To work around
+// gocodewalker's inconsistent .gitignore handling on Windows, we disable its
+// built-in ignore logic and apply .gitignore rules ourselves after the walker
+// yields each file.
 func (p *SCCProvider) walkDirectory(path string) ([]provider.FileStats, error) {
 	result := make([]provider.FileStats, 0)
 	queue := make(chan *gocodewalker.File, 128)
@@ -154,6 +157,12 @@ func (p *SCCProvider) walkDirectory(path string) ([]provider.FileStats, error) {
 	// Always skip common VCS and dependency directories, matching the previous
 	// filepath.WalkDir behaviour.
 	walker.ExcludeDirectory = []string{".git", ".hg", ".svn", "node_modules", "vendor"}
+	// We apply .gitignore rules manually below so that path handling is
+	// consistent across platforms (notably Windows).
+	walker.IgnoreGitIgnore = true
+
+	// Cache parsed .gitignore files by directory to avoid re-reading them.
+	gitIgnores := make(map[string]gitignore.GitIgnore)
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -164,6 +173,9 @@ func (p *SCCProvider) walkDirectory(path string) ([]provider.FileStats, error) {
 	}()
 
 	for f := range queue {
+		if p.ignoredByGitIgnore(f.Location, gitIgnores) {
+			continue
+		}
 		stats, err := p.countFile(f.Location)
 		if err != nil {
 			continue // best-effort: skip files we cannot process
@@ -176,5 +188,31 @@ func (p *SCCProvider) walkDirectory(path string) ([]provider.FileStats, error) {
 		return nil, walkErr
 	}
 	return result, nil
+}
+
+// ignoredByGitIgnore checks whether the given file path is ignored by any
+// .gitignore file on its path to the root directory. Parsed ignore objects are
+// cached in the supplied map.
+func (p *SCCProvider) ignoredByGitIgnore(filePath string, cache map[string]gitignore.GitIgnore) bool {
+	dir := filepath.Dir(filePath)
+	for {
+		ignore, ok := cache[dir]
+		if !ok {
+			if data, err := os.ReadFile(filepath.Join(dir, ".gitignore")); err == nil {
+				ignore = gitignore.New(bytes.NewReader(data), dir, nil)
+			}
+			cache[dir] = ignore
+		}
+		if ignore != nil && ignore.Ignore(filePath) {
+			return true
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return false
 }
 
