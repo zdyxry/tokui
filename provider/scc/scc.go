@@ -178,12 +178,3 @@ func (p *SCCProvider) walkDirectory(path string) ([]provider.FileStats, error) {
 	return result, nil
 }
 
-// shouldSkipDir reports whether a directory should be skipped during traversal.
-func shouldSkipDir(name string) bool {
-	switch name {
-	case ".git", ".hg", ".svn", "node_modules", "vendor":
-		return true
-	default:
-		return false
-	}
-}
