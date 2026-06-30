@@ -165,6 +165,13 @@ func (p *SCCProvider) walkDirectory(path string) ([]provider.FileStats, error) {
 	// Cache parsed .gitignore files by directory to avoid re-reading them.
 	gitIgnores := make(map[string]gitignore.GitIgnore)
 
+	// Resolve the scan root so we can stop traversing parent directories once
+	// we reach it, avoiding unrelated .gitignore files outside the project.
+	absRoot, err := filepath.Abs(path)
+	if err != nil {
+		absRoot = path
+	}
+
 	var wg sync.WaitGroup
 	wg.Add(1)
 	var walkErr error
@@ -178,7 +185,7 @@ func (p *SCCProvider) walkDirectory(path string) ([]provider.FileStats, error) {
 		if base == ".gitignore" || base == ".ignore" || base == ".gitmodules" {
 			continue
 		}
-		if p.ignoredByGitIgnore(f.Location, gitIgnores) {
+		if p.ignoredByGitIgnore(f.Location, absRoot, gitIgnores) {
 			continue
 		}
 		stats, err := p.countFile(f.Location)
@@ -197,9 +204,15 @@ func (p *SCCProvider) walkDirectory(path string) ([]provider.FileStats, error) {
 
 // ignoredByGitIgnore checks whether the given file path is ignored by any
 // .gitignore file on its path to the root directory. Parsed ignore objects are
-// cached in the supplied map.
-func (p *SCCProvider) ignoredByGitIgnore(filePath string, cache map[string]gitignore.GitIgnore) bool {
-	dir := filepath.Dir(filePath)
+// cached in the supplied map. The root argument bounds the upward traversal so
+// .gitignore files outside the scan root are not considered.
+func (p *SCCProvider) ignoredByGitIgnore(filePath, root string, cache map[string]gitignore.GitIgnore) bool {
+	absPath, err := filepath.Abs(filePath)
+	if err != nil {
+		absPath = filePath
+	}
+
+	dir := filepath.Dir(absPath)
 	for {
 		ignore, ok := cache[dir]
 		if !ok {
@@ -209,12 +222,15 @@ func (p *SCCProvider) ignoredByGitIgnore(filePath string, cache map[string]gitig
 			cache[dir] = ignore
 		}
 		if ignore != nil {
-			rel, err := filepath.Rel(dir, filePath)
+			rel, err := filepath.Rel(dir, absPath)
 			if err == nil && ignore.Relative(rel, false) != nil {
 				return true
 			}
 		}
 
+		if filepath.Clean(dir) == filepath.Clean(root) {
+			break
+		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
 			break
