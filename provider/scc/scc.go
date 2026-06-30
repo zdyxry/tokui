@@ -228,7 +228,7 @@ func (p *SCCProvider) ignoredByGitIgnore(filePath, root string, cache map[string
 			}
 		}
 
-		if filepath.Clean(dir) == filepath.Clean(root) {
+		if strings.EqualFold(filepath.Clean(dir), filepath.Clean(root)) {
 			break
 		}
 		parent := filepath.Dir(dir)
