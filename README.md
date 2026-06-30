@@ -169,6 +169,7 @@ Tokui also supports basic mouse interaction in terminals that report mouse event
 | ------------------- | ------------------------------------------------------------------- |
 | Scroll wheel        | Move cursor / scroll previews and language lists                    |
 | Left click          | Select a row or an item in the language selection overlay           |
+| Left click header   | Sort by the clicked column (click again to toggle ascending/descending) |
 | Double left click   | Enter directory, expand/collapse directory, or open file preview    |
 | Double left click `..` | Go back to the parent directory                                    |
 | Click outside overlay | Close the file preview, language selection, or chart overlay       |

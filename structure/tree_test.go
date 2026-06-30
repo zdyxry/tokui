@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/zdyxry/tokui/provider"
 	"github.com/zdyxry/tokui/tokei"
 )
@@ -90,17 +92,13 @@ func TestAddFileToTree_MultipleFilesSameDir(t *testing.T) {
 	}
 
 	src := root.GetChild("src")
-	if src == nil {
-		t.Fatal("expected src dir")
-	}
+	require.NotNil(t, src, "expected src dir")
 	if len(src.Child) != 2 {
 		t.Errorf("expected 2 files under src, got %d", len(src.Child))
 	}
 
 	c := root.GetChild("c.py")
-	if c == nil {
-		t.Fatal("expected c.py file")
-	}
+	require.NotNil(t, c, "expected c.py file")
 }
 
 func TestAggregateStats_NestedTree(t *testing.T) {
@@ -129,9 +127,7 @@ func TestAggregateStats_NestedTree(t *testing.T) {
 	}
 
 	src := root.GetChild("src")
-	if src == nil {
-		t.Fatal("expected src dir")
-	}
+	require.NotNil(t, src, "expected src dir")
 	wantSrcTotal := CodeStats{Code: 25, Comments: 3, Blanks: 3}
 	if src.TotalStats != wantSrcTotal {
 		t.Errorf("src total stats mismatch: got %+v, want %+v", src.TotalStats, wantSrcTotal)
@@ -161,17 +157,13 @@ func TestBuildFromProviderResult_ValidTokeiJSON(t *testing.T) {
 	}
 
 	root := tree.Root()
-	if root == nil {
-		t.Fatal("expected root entry")
-	}
+	require.NotNil(t, root, "expected root entry")
 	if root.TotalStats.Code != 10 {
 		t.Errorf("expected root code 10, got %d", root.TotalStats.Code)
 	}
 
 	mainGo := root.GetChild("main.go")
-	if mainGo == nil {
-		t.Fatal("expected main.go file")
-	}
+	require.NotNil(t, mainGo, "expected main.go file")
 }
 
 func TestBuildFromProviderResult_NestedTokeiJSON(t *testing.T) {
@@ -220,17 +212,13 @@ func TestBuildFromProvider_Smoke(t *testing.T) {
 	}
 
 	root := tree.Root()
-	if root == nil {
-		t.Fatal("expected root entry")
-	}
+	require.NotNil(t, root, "expected root entry")
 	if root.TotalStats.Code == 0 {
 		t.Error("expected non-zero code stats")
 	}
 
 	mainGo := root.GetChild("main.go")
-	if mainGo == nil {
-		t.Fatal("expected main.go file")
-	}
+	require.NotNil(t, mainGo, "expected main.go file")
 }
 
 func TestBuildFromResult_Complexity(t *testing.T) {

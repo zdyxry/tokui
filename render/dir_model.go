@@ -2116,6 +2116,14 @@ func (dm *DirModel) handleTableMouse(msg tea.MouseMsg) (int, int, bool) {
 		if msg.Action != tea.MouseActionPress {
 			return -1, 0, false
 		}
+		// Clicking the header row sorts by the clicked column.
+		if msg.Y >= 0 && msg.Y < tableHeaderHeight {
+			handled := dm.handleHeaderClick(msg.X)
+			// Reset the row double-click tracker so a header click does not
+			// accidentally combine with a subsequent row click.
+			dm.lastClick = mouseClick{}
+			return -1, 0, handled
+		}
 		row := dm.tableRowAtY(msg.Y)
 		if row < 0 {
 			return -1, 0, false
@@ -2130,6 +2138,36 @@ func (dm *DirModel) handleTableMouse(msg tea.MouseMsg) (int, int, bool) {
 		return row, clickCount, true
 	}
 	return -1, 0, false
+}
+
+// handleHeaderClick sorts by the column under the given X coordinate.
+// It returns true when the click was on a sortable column header.
+func (dm *DirModel) handleHeaderClick(x int) bool {
+	cols := dm.dirsTable.Columns()
+	visibleCols := dm.visibleColumns()
+	if len(cols) == 0 || len(visibleCols) != len(cols) {
+		return false
+	}
+
+	startX := 0
+	for i, c := range cols {
+		endX := startX + c.Width
+		if x >= startX && x < endX {
+			key := visibleCols[i].SortKey
+			if key == SortByNone {
+				return false
+			}
+			if dm.sortState.Key == key {
+				dm.toggleSortOrder()
+			} else {
+				dm.sortState = SortState{Key: key, Desc: defaultDescForSortKey(key)}
+			}
+			dm.updateTableData()
+			return true
+		}
+		startX = endX
+	}
+	return false
 }
 
 // handleLangSelectMouse handles mouse events for the language selection overlay.

@@ -318,3 +318,39 @@ func TestIntegration_GoldenInitialRender(t *testing.T) {
 	}
 	teatest.RequireEqualOutput(t, out)
 }
+
+func TestIntegration_ClickHeaderSortsColumn(t *testing.T) {
+	tm := startIntegrationApp(t, false, false)
+
+	// Wait for the initial render so the first column widths are known.
+	waitForOutput(t, tm, "Total ▼")
+
+	// The first two visible columns are the icon and hidden path columns.
+	// The table is rendered with deterministic widths on the integration
+	// terminal size, so the Name column starts after those.
+	nameX := 0
+	for i := 0; i < 2; i++ {
+		nameX += 5
+	}
+
+	// Click the "Name" column header.
+	tm.Send(tea.MouseMsg{
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+		X:      nameX,
+		Y:      0,
+	})
+	// Name column is sorted ascending by default.
+	waitForOutput(t, tm, "Name ▲")
+
+	// Clicking the same header again toggles to descending.
+	tm.Send(tea.MouseMsg{
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+		X:      nameX,
+		Y:      0,
+	})
+	waitForOutput(t, tm, "Name ▼")
+
+	quitApp(t, tm)
+}
