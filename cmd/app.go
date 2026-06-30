@@ -136,8 +136,14 @@ func runApp(cmd *cobra.Command, args []string) error {
 		if err := tree.BuildFromProvider(p, analysisPath); err != nil {
 			// Provide a more friendly error message if the provider binary is not installed
 			if strings.Contains(err.Error(), "executable file not found") {
+				var pipeExample string
+				if p.Info().Name == "scc" {
+					pipeExample = "scc --by-file -f json . | tokui"
+				} else {
+					pipeExample = "tokei -o json . | tokui"
+				}
 				errMsg := fmt.Sprintf("Command '%s' not found. Please install it and ensure it's in your system PATH environment variable.\n"+
-					"Or use pipe mode: tokei -o json . | tokui", p.Info().Name)
+					"Or use pipe mode: %s", p.Info().Name, pipeExample)
 				printError(errMsg)
 				os.Exit(1)
 			}
