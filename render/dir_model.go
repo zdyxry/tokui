@@ -218,9 +218,9 @@ func columnMinWidth(c Column) int {
 // buildRow creates a table row for the given entry using the supplied visible
 // columns, display name, language string, stats and percentage.
 // buildParentRow creates the synthetic ".." row shown in navigation mode.
-func (dm *DirModel) buildParentRow() table.Row {
-	row := make(table.Row, len(dm.columns))
-	for i, c := range dm.columns {
+func (dm *DirModel) buildParentRow(cols []Column) table.Row {
+	row := make(table.Row, len(cols))
+	for i, c := range cols {
 		switch i {
 		case 0:
 			row[i] = "⬆"
@@ -1078,9 +1078,11 @@ func (dm *DirModel) updateTableData(resetCursor ...bool) {
 	dm.nav.Entry().SortChildBy(dm.buildChildComparator())
 	parentTotal := dm.parentTotalForKey(dm.sortState.Key)
 
+	cols := dm.visibleColumns()
+
 	dm.tableEntries = make([]*tableEntry, 0)
 	rows := make([]table.Row, 0)
-	maxNameWidth := lipgloss.Width(dm.columns[2].Title)
+	maxNameWidth := lipgloss.Width(cols[2].Title)
 	tempLangsWidth := 24
 
 	if dm.treeMode {
@@ -1122,7 +1124,7 @@ func (dm *DirModel) updateTableData(resetCursor ...bool) {
 						langStr += strings.Repeat(" ", pad)
 					}
 				}
-				rows = append(rows, dm.buildRow(dm.columns, entry, name, langStr, stats, percent))
+				rows = append(rows, dm.buildRow(cols, entry, name, langStr, stats, percent))
 				dm.tableEntries = append(dm.tableEntries, &tableEntry{entry: entry, depth: depth})
 				if entry.IsDir && entry.Expanded {
 					entry.SortChildBy(dm.buildChildComparator())
@@ -1150,7 +1152,7 @@ func (dm *DirModel) updateTableData(resetCursor ...bool) {
 			if lipgloss.Width(langStr) > tempLangsWidth {
 				langStr = fmtName(langStr, tempLangsWidth)
 			}
-			rows = append(rows, dm.buildRow(dm.columns, entry, name, langStr, stats, percent))
+			rows = append(rows, dm.buildRow(cols, entry, name, langStr, stats, percent))
 			dm.tableEntries = append(dm.tableEntries, &tableEntry{entry: entry, depth: depth})
 
 			if entry.IsDir && entry.Expanded {
@@ -1169,7 +1171,7 @@ func (dm *DirModel) updateTableData(resetCursor ...bool) {
 		if dm.nav.entryStack.len() > 0 {
 			parentEntry := &structure.Entry{Path: "..", IsDir: true}
 			dm.tableEntries = append(dm.tableEntries, &tableEntry{entry: parentEntry, isParent: true})
-			rows = append(rows, dm.buildParentRow())
+			rows = append(rows, dm.buildParentRow(cols))
 		}
 		for _, child := range dm.nav.Entry().Child {
 			if !dm.filters.Valid(child) {
@@ -1208,7 +1210,7 @@ func (dm *DirModel) updateTableData(resetCursor ...bool) {
 						langStr += strings.Repeat(" ", pad)
 					}
 				}
-				rows = append(rows, dm.buildRow(dm.columns, child, name, langStr, stats, percent))
+				rows = append(rows, dm.buildRow(cols, child, name, langStr, stats, percent))
 				dm.tableEntries = append(dm.tableEntries, &tableEntry{entry: child, depth: 0})
 				continue
 			}
@@ -1230,7 +1232,7 @@ func (dm *DirModel) updateTableData(resetCursor ...bool) {
 			if lipgloss.Width(langStr) > tempLangsWidth {
 				langStr = fmtName(langStr, tempLangsWidth)
 			}
-			rows = append(rows, dm.buildRow(dm.columns, child, name, langStr, stats, percent))
+			rows = append(rows, dm.buildRow(cols, child, name, langStr, stats, percent))
 			dm.tableEntries = append(dm.tableEntries, &tableEntry{entry: child, depth: 0})
 		}
 	}
@@ -1239,8 +1241,8 @@ func (dm *DirModel) updateTableData(resetCursor ...bool) {
 	nameWidth := maxNameWidth + 2
 
 	// Compute minimum widths for each column based on its type.
-	minWidths := make([]int, len(dm.columns))
-	for i, c := range dm.columns {
+	minWidths := make([]int, len(cols))
+	for i, c := range cols {
 		minWidths[i] = columnMinWidth(c)
 		if i == 0 {
 			minWidths[i] = max(minWidths[i], 4) // icon column
@@ -1256,7 +1258,7 @@ func (dm *DirModel) updateTableData(resetCursor ...bool) {
 
 	// Sum all fixed-width columns (everything except Name).
 	fixedWidths := 0
-	for i := range dm.columns {
+	for i := range cols {
 		if i != 2 {
 			fixedWidths += minWidths[i]
 		}
@@ -1270,8 +1272,8 @@ func (dm *DirModel) updateTableData(resetCursor ...bool) {
 		}
 	}
 
-	columns := make([]table.Column, len(dm.columns))
-	for i, c := range dm.columns {
+	columns := make([]table.Column, len(cols))
+	for i, c := range cols {
 		columns[i] = table.Column{Title: c.FmtName(dm.sortState), Width: minWidths[i]}
 	}
 
