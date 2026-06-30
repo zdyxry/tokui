@@ -3,6 +3,7 @@ package render
 import (
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/zdyxry/tokui/provider"
 	"github.com/zdyxry/tokui/structure"
 )
@@ -54,5 +55,29 @@ func TestTreemapDrillDownNavigatesIntoChild(t *testing.T) {
 	}
 	if dm.treemapSelected != 0 {
 		t.Fatalf("expected treemap selection to reset to 0, got %d", dm.treemapSelected)
+	}
+}
+
+func TestTreemapRightClickGoesUp(t *testing.T) {
+	root := structure.NewDirEntry("/foo")
+	sub := structure.NewDirEntry("/foo/sub")
+	root.AddChild(sub)
+	root.AggregateStats()
+
+	nav := NewCodeNavigation(structure.NewTree(root))
+	dm := NewDirModel(nav, provider.Info{Name: "test"}, false, true)
+	vm := NewViewModel(nav, dm)
+
+	// Drill into the child first so there is a parent directory to return to.
+	nav.Down("sub", 0, 0)
+	if vm.nav.Entry() != sub {
+		t.Fatalf("setup: expected navigation at sub, got %v", vm.nav.Entry())
+	}
+
+	// A right-click in treemap mode should navigate back up to the parent.
+	vm.Update(tea.MouseMsg{Button: tea.MouseButtonRight, Action: tea.MouseActionPress})
+
+	if vm.nav.Entry() != root {
+		t.Fatalf("expected navigation to return to root after right-click, got %v", vm.nav.Entry())
 	}
 }
