@@ -105,6 +105,32 @@ func TestAnalyze_RespectsGitIgnore(t *testing.T) {
 	}
 }
 
+func TestAnalyze_RespectsGitIgnoreNegation(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "kept.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "ignored.go"), []byte("package ignored\n"), 0644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("*.go\n!kept.go\n"), 0644); err != nil {
+		t.Fatalf("failed to write .gitignore: %v", err)
+	}
+
+	p := New()
+	result, err := p.Analyze(dir)
+	if err != nil {
+		t.Fatalf("Analyze failed: %v", err)
+	}
+
+	if len(result.Files) != 1 {
+		t.Fatalf("expected 1 file (kept.go), got %d", len(result.Files))
+	}
+	if result.Files[0].Path != filepath.Join(dir, "kept.go") {
+		t.Errorf("expected kept.go, got %q", result.Files[0].Path)
+	}
+}
+
 func TestParseStdin(t *testing.T) {
 	data := []byte(`[
 		{

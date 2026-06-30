@@ -223,8 +223,10 @@ func (p *SCCProvider) ignoredByGitIgnore(filePath, root string, cache map[string
 		}
 		if ignore != nil {
 			rel, err := filepath.Rel(dir, absPath)
-			if err == nil && ignore.Relative(rel, false) != nil {
-				return true
+			if err == nil {
+				if pattern := ignore.Relative(rel, false); pattern != nil {
+					return pattern.Ignore()
+				}
 			}
 		}
 
