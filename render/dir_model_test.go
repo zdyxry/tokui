@@ -8,6 +8,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/stretchr/testify/require"
+
 	"github.com/zdyxry/tokui/filter"
 	"github.com/zdyxry/tokui/provider"
 	"github.com/zdyxry/tokui/structure"
@@ -335,17 +337,13 @@ func TestDirModelApplySearchResultFromTreeMode(t *testing.T) {
 		t.Errorf("expected tree root to stay at project root, got %q", dm.nav.Entry().Path)
 	}
 	subdir := dm.nav.Entry().GetChild("subdir")
-	if subdir == nil {
-		t.Fatal("expected subdir to be visible under root")
-	}
+	require.NotNil(t, subdir, "expected subdir to be visible under root")
 	if !subdir.Expanded {
 		t.Error("expected subdir to be expanded so the target file is visible")
 	}
 
 	target := subdir.GetChild("b.py")
-	if target == nil {
-		t.Fatal("expected b.py to be visible under subdir")
-	}
+	require.NotNil(t, target, "expected b.py to be visible under subdir")
 	idx := dm.findChildIndex(target)
 	if idx < 0 {
 		t.Fatal("expected b.py to be visible in the tree table")
@@ -1322,5 +1320,97 @@ func TestPercentColumn_ContextAware(t *testing.T) {
 				t.Errorf("row1 percent: expected %s, got %s", tt.row1, got)
 			}
 		})
+	}
+}
+
+func TestDirModelHandleHeaderClick(t *testing.T) {
+	dm := newTestDirModel()
+	dm.Update(ScanFinished{})
+	dm.updateSize(120, 24)
+
+	cols := dm.dirsTable.Columns()
+	if len(cols) < 8 {
+		t.Fatalf("expected at least 8 columns, got %d", len(cols))
+	}
+
+	midX := func(idx int) int {
+		startX := 0
+		for i := 0; i < idx; i++ {
+			startX += cols[i].Width
+		}
+		return startX + cols[idx].Width/2
+	}
+
+	t.Run("click sortable column changes key", func(t *testing.T) {
+		dm.sortState = SortState{Key: SortByTotal, Desc: true}
+		if !dm.handleHeaderClick(midX(2)) {
+			t.Fatal("expected Name header click to be handled")
+		}
+		if dm.sortState.Key != SortByName {
+			t.Errorf("expected sort key %q, got %q", SortByName, dm.sortState.Key)
+		}
+		if dm.sortState.Desc != false {
+			t.Errorf("expected Name to default ascending, got Desc=%v", dm.sortState.Desc)
+		}
+	})
+
+	t.Run("click current sort column toggles order", func(t *testing.T) {
+		dm.sortState = SortState{Key: SortByName, Desc: false}
+		if !dm.handleHeaderClick(midX(2)) {
+			t.Fatal("expected Name header click to be handled")
+		}
+		if dm.sortState.Key != SortByName {
+			t.Errorf("expected sort key to stay %q, got %q", SortByName, dm.sortState.Key)
+		}
+		if dm.sortState.Desc != true {
+			t.Errorf("expected Desc to toggle to true, got %v", dm.sortState.Desc)
+		}
+	})
+
+	t.Run("click non-sortable column does nothing", func(t *testing.T) {
+		dm.sortState = SortState{Key: SortByTotal, Desc: true}
+		if dm.handleHeaderClick(midX(0)) {
+			t.Error("expected icon header click to be ignored")
+		}
+		if dm.sortState.Key != SortByTotal {
+			t.Errorf("expected sort key to remain %q, got %q", SortByTotal, dm.sortState.Key)
+		}
+	})
+
+	t.Run("click outside columns does nothing", func(t *testing.T) {
+		dm.sortState = SortState{Key: SortByTotal, Desc: true}
+		totalWidth := 0
+		for _, c := range cols {
+			totalWidth += c.Width
+		}
+		if dm.handleHeaderClick(totalWidth + 10) {
+			t.Error("expected click outside columns to be ignored")
+		}
+	})
+}
+
+func TestDirModelHandleTableMouseRoutesHeaderClicks(t *testing.T) {
+	dm := newTestDirModel()
+	dm.Update(ScanFinished{})
+	dm.updateSize(120, 24)
+
+	cols := dm.dirsTable.Columns()
+	nameX := cols[0].Width + cols[1].Width + cols[2].Width/2
+
+	dm.sortState = SortState{Key: SortByTotal, Desc: true}
+	row, clicks, handled := dm.handleTableMouse(tea.MouseMsg{
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+		X:      nameX,
+		Y:      0,
+	})
+	if !handled {
+		t.Fatal("expected header click to be handled")
+	}
+	if row != -1 || clicks != 0 {
+		t.Errorf("expected row=-1, clicks=0, got row=%d, clicks=%d", row, clicks)
+	}
+	if dm.sortState.Key != SortByName {
+		t.Errorf("expected sort key to change to %q, got %q", SortByName, dm.sortState.Key)
 	}
 }
