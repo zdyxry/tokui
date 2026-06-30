@@ -185,12 +185,14 @@ func runPipeMode(tree *structure.Tree, p provider.Provider) error {
 		return fmt.Errorf("failed to read stdin: %w", err)
 	}
 
-	result, used, err := parseStdinWithProvider(p, data)
+	result, _, err := parseStdinWithProvider(p, data)
 	if err != nil {
 		return err
 	}
 
-	return tree.BuildFromProviderResult(result, used.Info().Name)
+	// Pipe mode has no explicit analysis root; use the current directory so
+	// absolute paths from the provider output can be normalized relative to it.
+	return tree.BuildFromProviderResult(result, ".")
 }
 
 // parseStdinWithProvider tries to parse stdin data with the requested provider.
