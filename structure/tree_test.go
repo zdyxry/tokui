@@ -298,9 +298,7 @@ func TestNormalizePath_RelativeUnderRoot(t *testing.T) {
 		t.Fatalf("create sub dir: %v", err)
 	}
 
-	if err := os.Chdir(tmp); err != nil {
-		t.Fatalf("chdir to temp dir: %v", err)
-	}
+	t.Chdir(tmp)
 
 	cases := []struct {
 		root, raw, want string
