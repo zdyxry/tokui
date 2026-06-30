@@ -91,8 +91,7 @@ tokui
 tokui --provider scc
 
 # Or set the provider via environment variable
-export TOKUI_PROVIDER=scc
-tokui
+TOKUI_PROVIDER=scc tokui
 
 # Analyze a specific directory
 tokui /path/to/your/project
