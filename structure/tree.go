@@ -132,15 +132,22 @@ func (t *Tree) addFileToTree(root *Entry, relativePath string, stats map[string]
 // relative to the analysis root. It handles slash normalization and removes
 // leading "./" or "/" prefixes that tools like tokei may produce.
 func normalizePath(root, raw string) string {
-	root = filepath.ToSlash(root)
-	raw = filepath.ToSlash(raw)
-	raw = strings.TrimPrefix(raw, "./")
+	root = filepath.ToSlash(filepath.Clean(root))
+	raw = filepath.ToSlash(filepath.Clean(raw))
+
+	if raw == root {
+		return ""
+	}
+
+	prefix := root
+	if !strings.HasSuffix(prefix, "/") {
+		prefix += "/"
+	}
 
 	// If the raw path is already under the root (including Unix-style absolute
 	// paths on Windows), trim the root directly.
-	if strings.HasPrefix(raw, root) {
-		rel := strings.TrimPrefix(raw, root)
-		rel = strings.TrimPrefix(rel, "/")
+	if strings.HasPrefix(raw, prefix) {
+		rel := strings.TrimPrefix(raw, prefix)
 		rel = strings.TrimPrefix(rel, "./")
 		return rel
 	}
@@ -150,10 +157,12 @@ func normalizePath(root, raw string) string {
 	// relative to the working directory while the analysis root is absolute.
 	if !filepath.IsAbs(raw) {
 		if abs, err := filepath.Abs(raw); err == nil {
-			absRaw := filepath.ToSlash(abs)
-			if strings.HasPrefix(absRaw, root) {
-				rel := strings.TrimPrefix(absRaw, root)
-				rel = strings.TrimPrefix(rel, "/")
+			absRaw := filepath.ToSlash(filepath.Clean(abs))
+			if absRaw == root {
+				return ""
+			}
+			if strings.HasPrefix(absRaw, prefix) {
+				rel := strings.TrimPrefix(absRaw, prefix)
 				rel = strings.TrimPrefix(rel, "./")
 				return rel
 			}
