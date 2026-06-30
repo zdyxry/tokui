@@ -92,25 +92,47 @@ func extractEmbeddedTokei() (string, error) {
 	}
 	defer func() { _ = r.Close() }()
 
-	f, err := os.OpenFile(binaryPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
+	// Write to a temporary file and atomically rename it to the target path.
+	// This avoids "text file busy" errors when multiple concurrent processes
+	// (e.g. parallel `go test` packages) extract the embedded binary to the
+	// same cache location at the same time.
+	tmpFile, err := os.CreateTemp(tokeiDir, binaryName+"-*.tmp")
 	if err != nil {
-		return "", fmt.Errorf("failed to create cache file: %w", err)
+		return "", fmt.Errorf("failed to create temp cache file: %w", err)
 	}
-	defer func() { _ = f.Close() }()
+	tmpPath := tmpFile.Name()
+	cleanupTmp := func() { _ = os.Remove(tmpPath) }
 
-	written, err := f.ReadFrom(r)
+	written, err := tmpFile.ReadFrom(r)
 	if err != nil {
-		_ = os.Remove(binaryPath)
+		_ = tmpFile.Close()
+		cleanupTmp()
 		return "", fmt.Errorf("failed to write embedded tokei: %w", err)
 	}
 
 	// Sanity check: real tokei binary should be at least 100KB.
 	// Placeholder files are much smaller (~30 bytes).
 	if written < 100*1024 {
-		_ = os.Remove(binaryPath)
+		_ = tmpFile.Close()
+		cleanupTmp()
 		return "", fmt.Errorf(
 			"embedded tokei binary is a placeholder; run 'make fetch-tokei-binaries' to download real binaries",
 		)
+	}
+
+	if err := tmpFile.Close(); err != nil {
+		cleanupTmp()
+		return "", fmt.Errorf("failed to close temp cache file: %w", err)
+	}
+
+	if err := os.Rename(tmpPath, binaryPath); err != nil {
+		cleanupTmp()
+		return "", fmt.Errorf("failed to install cached tokei binary: %w", err)
+	}
+
+	// Ensure the final binary is executable (CreateTemp uses 0600 by default).
+	if err := os.Chmod(binaryPath, 0755); err != nil {
+		return "", fmt.Errorf("failed to make cached tokei binary executable: %w", err)
 	}
 
 	return binaryPath, nil
