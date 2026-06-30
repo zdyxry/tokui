@@ -132,6 +132,11 @@ func (t *Tree) addFileToTree(root *Entry, relativePath string, stats map[string]
 // relative to the analysis root. It handles slash normalization and removes
 // leading "./" or "/" prefixes that tools like tokei may produce.
 func normalizePath(root, raw string) string {
+	if !filepath.IsAbs(raw) {
+		if abs, err := filepath.Abs(raw); err == nil {
+			raw = abs
+		}
+	}
 	root = filepath.ToSlash(root)
 	raw = filepath.ToSlash(raw)
 	raw = strings.TrimPrefix(raw, "./")

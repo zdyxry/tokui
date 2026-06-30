@@ -275,8 +275,6 @@ func TestNormalizePath(t *testing.T) {
 	}{
 		{"/project", "/project/main.go", "main.go"},
 		{"/project", "/project/src/foo.go", "src/foo.go"},
-		{"/project", "src/foo.go", "src/foo.go"},
-		{"/project", "./main.go", "main.go"},
 		{"/project", "//main.go", "/main.go"},
 	}
 
@@ -284,6 +282,37 @@ func TestNormalizePath(t *testing.T) {
 		got := normalizePath(tt.root, tt.raw)
 		if got != tt.want {
 			t.Errorf("normalizePath(%q, %q) = %q, want %q", tt.root, tt.raw, got, tt.want)
+		}
+	}
+}
+
+func TestNormalizePath_RelativeUnderRoot(t *testing.T) {
+	// When the walker returns a path relative to the current working directory
+	// and the analysis root is the corresponding absolute path, normalizePath
+	// must resolve the raw path against the working directory so it can be
+	// trimmed relative to the root. This prevents duplicated directory prefixes
+	// such as "sub/sub/main.go".
+	tmp := t.TempDir()
+	sub := filepath.Join(tmp, "sub")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatalf("create sub dir: %v", err)
+	}
+
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir to temp dir: %v", err)
+	}
+
+	cases := []struct {
+		root, raw, want string
+	}{
+		{sub, "sub/main.go", "main.go"},
+		{sub, "./sub/main.go", "main.go"},
+	}
+
+	for _, c := range cases {
+		got := normalizePath(c.root, c.raw)
+		if got != c.want {
+			t.Errorf("normalizePath(%q, %q) = %q, want %q", c.root, c.raw, got, c.want)
 		}
 	}
 }
