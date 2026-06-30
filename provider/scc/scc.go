@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/boyter/gocodewalker"
@@ -173,6 +174,10 @@ func (p *SCCProvider) walkDirectory(path string) ([]provider.FileStats, error) {
 	}()
 
 	for f := range queue {
+		base := strings.ToLower(filepath.Base(f.Location))
+		if base == ".gitignore" || base == ".ignore" || base == ".gitmodules" {
+			continue
+		}
 		if p.ignoredByGitIgnore(f.Location, gitIgnores) {
 			continue
 		}
