@@ -93,6 +93,17 @@ func TestParseReport_InvalidJSON(t *testing.T) {
 	}
 }
 
+func TestParseReport_EmptyObject(t *testing.T) {
+	data := []byte(`{}`)
+	report, err := parseReport(data)
+	if err != nil {
+		t.Fatalf("parseReport({}) failed: %v", err)
+	}
+	if len(report) != 0 {
+		t.Errorf("expected empty report, got %d languages", len(report))
+	}
+}
+
 func TestToProviderResult(t *testing.T) {
 	report := LanguageReport{
 		"Go": {

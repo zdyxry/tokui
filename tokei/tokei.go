@@ -150,7 +150,7 @@ func parseReport(data []byte) (LanguageReport, error) {
 	// Because encoding/json ignores unknown fields, a nested report can
 	// unmarshal into LanguageReport with all-zero Stats, so we validate that
 	// the result actually contains stats.
-	if err := json.Unmarshal(data, &report); err == nil && looksLikeLanguageReport(report) {
+	if err := json.Unmarshal(data, &report); err == nil && (len(report) == 0 || looksLikeLanguageReport(report)) {
 		return report, nil
 	}
 
