@@ -127,6 +127,13 @@ func extractEmbeddedTokei() (string, error) {
 
 	if err := os.Rename(tmpPath, binaryPath); err != nil {
 		cleanupTmp()
+		// Another process (e.g. a parallel `go test` package) may have already
+		// installed a valid binary at binaryPath. On Windows, renaming over an
+		// existing/locked file fails with "Access is denied" rather than
+		// replacing it atomically. If a valid binary is already present, use it.
+		if info, statErr := os.Stat(binaryPath); statErr == nil && info.Size() > 100*1024 {
+			return binaryPath, nil
+		}
 		return "", fmt.Errorf("failed to install cached tokei binary: %w", err)
 	}
 
