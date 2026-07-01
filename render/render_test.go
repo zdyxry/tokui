@@ -81,3 +81,34 @@ func TestTreemapRightClickGoesUp(t *testing.T) {
 		t.Fatalf("expected navigation to return to root after right-click, got %v", vm.nav.Entry())
 	}
 }
+
+
+func TestTreemapRightClickIgnoredDuringSearch(t *testing.T) {
+	root := structure.NewDirEntry("/foo")
+	sub := structure.NewDirEntry("/foo/sub")
+	root.AddChild(sub)
+	root.AggregateStats()
+
+	nav := NewCodeNavigation(structure.NewTree(root))
+	dm := NewDirModel(nav, provider.Info{Name: "test"}, false, true)
+	vm := NewViewModel(nav, dm)
+
+	// Drill into the child first so there is a parent directory to return to.
+	nav.Down("sub", 0, 0)
+	if vm.nav.Entry() != sub {
+		t.Fatalf("setup: expected navigation at sub, got %v", vm.nav.Entry())
+	}
+
+	// Open the global search overlay.
+	dm.openGlobalSearch()
+	if dm.mode != SEARCH {
+		t.Fatalf("setup: expected SEARCH mode, got %v", dm.mode)
+	}
+
+	// A right-click while the search overlay is open should not navigate.
+	vm.Update(tea.MouseMsg{Button: tea.MouseButtonRight, Action: tea.MouseActionPress})
+
+	if vm.nav.Entry() != sub {
+		t.Fatalf("expected navigation to stay at sub while search is open, got %v", vm.nav.Entry())
+	}
+}

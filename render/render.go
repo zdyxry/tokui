@@ -146,7 +146,7 @@ func (vm *ViewModel) handleMouseMsg(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		// Right-click mirrors left double-click drill-down: it goes back up to
 		// the parent directory. This is the only mouse route up in treemap mode,
 		// where no clickable ".." element exists.
-		if msg.Button == tea.MouseButtonRight && msg.Action == tea.MouseActionPress {
+		if vm.dirModel.mode != SEARCH && msg.Button == tea.MouseButtonRight && msg.Action == tea.MouseActionPress {
 			vm.levelUp()
 			return vm, nil
 		}
