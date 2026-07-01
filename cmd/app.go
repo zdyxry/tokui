@@ -181,9 +181,9 @@ func runApp(cmd *cobra.Command, args []string) error {
 		// clear message instead of a raw provider failure and stack trace.
 		if _, statErr := os.Stat(analysisPath); statErr != nil {
 			switch {
-			case os.IsNotExist(statErr):
+			case errors.Is(statErr, os.ErrNotExist):
 				printError(fmt.Sprintf("Path %q does not exist. Please provide a valid file or directory to analyze.", analysisPath))
-			case os.IsPermission(statErr):
+			case errors.Is(statErr, os.ErrPermission):
 				printError(fmt.Sprintf("Permission denied accessing %q. Please check its permissions.", analysisPath))
 			default:
 				printError(fmt.Sprintf("Cannot access %q: %v", analysisPath, statErr))
