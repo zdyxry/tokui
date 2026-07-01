@@ -177,6 +177,20 @@ func runApp(cmd *cobra.Command, args []string) error {
 		}
 		analysisPath := filepath.Clean(root)
 
+		// Validate the path before shelling out to the provider so users get a
+		// clear message instead of a raw provider failure and stack trace.
+		if _, statErr := os.Stat(analysisPath); statErr != nil {
+			switch {
+			case os.IsNotExist(statErr):
+				printError(fmt.Sprintf("Path %q does not exist. Please provide a valid file or directory to analyze.", analysisPath))
+			case os.IsPermission(statErr):
+				printError(fmt.Sprintf("Permission denied accessing %q. Please check its permissions.", analysisPath))
+			default:
+				printError(fmt.Sprintf("Cannot access %q: %v", analysisPath, statErr))
+			}
+			os.Exit(1)
+		}
+
 		if err := tree.BuildFromProvider(p, analysisPath); err != nil {
 			// Provide a more friendly error message if the provider binary is not installed
 			if strings.Contains(err.Error(), "executable file not found") {
