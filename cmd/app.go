@@ -84,7 +84,11 @@ func init() {
 	appCmd.MarkFlagsMutuallyExclusive("tree", "treemap")
 }
 
-func Execute() {
+// Execute runs the root command. version is the version string to report via
+// the --version/-v flag; it is resolved against Go build info when it is empty
+// or the "dev" placeholder.
+func Execute(version string) {
+	appCmd.Version = resolveVersion(version)
 	if err := appCmd.Execute(); err != nil {
 		var cliErr *CLIError
 		if errors.As(err, &cliErr) {
@@ -95,6 +99,46 @@ func Execute() {
 		os.Exit(1)
 	}
 }
+
+// resolveVersion returns the version to report. It prefers an explicit,
+// build-injected version and otherwise falls back to Go module build info so
+// that binaries produced by `go install ...@version` still report something
+// useful instead of a bare "dev".
+func resolveVersion(version string) string {
+	if version != "" && version != "dev" {
+		return version
+	}
+
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "dev"
+	}
+
+	if v := info.Main.Version; v != "" && v != "(devel)" {
+		return v
+	}
+
+	var revision, suffix string
+	for _, setting := range info.Settings {
+		switch setting.Key {
+		case "vcs.revision":
+			revision = setting.Value
+		case "vcs.modified":
+			if setting.Value == "true" {
+				suffix = "-dirty"
+			}
+		}
+	}
+	if revision != "" {
+		if len(revision) > 12 {
+			revision = revision[:12]
+		}
+		return "dev+" + revision + suffix
+	}
+
+	return "dev"
+}
+
 
 func runApp(cmd *cobra.Command, args []string) error {
 	defer func() {

@@ -3,6 +3,7 @@
 BINARY_DIR=./bin
 BINARY_NAME=tokui
 TOKEI_VERSION?=14.0.0
+VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
 help: ## Show this help
 	@egrep '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -27,4 +28,4 @@ ensure-tokei-binaries: ## Ensure tokei binaries are present (fetch if missing, b
 	fi
 
 build: ensure-tokei-binaries ## Produce a binary
-	go build -ldflags "-s -w" -o ${BINARY_DIR}/${BINARY_NAME}
+	go build -ldflags "-s -w -X main.version=$(VERSION)" -o ${BINARY_DIR}/${BINARY_NAME}
