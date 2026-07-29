@@ -4,6 +4,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/zdyxry/tokui/gitx"
 	"github.com/zdyxry/tokui/structure"
 )
 
@@ -43,7 +44,17 @@ func (dm *DirModel) formatTreeName(entry *structure.Entry, depth int) string {
 		prefix = "  "
 	}
 	indent := strings.Repeat("  ", depth)
-	return indent + prefix + entry.Name()
+	return indent + prefix + dm.displayName(entry)
+}
+
+// displayName returns the entry name, with a marker appended for files
+// deleted between the two snapshots of Compare mode.
+func (dm *DirModel) displayName(e *structure.Entry) string {
+	name := e.Name()
+	if dm.modeInfo.Compare() && e.Change.Kind == gitx.Deleted {
+		name += " (已删除)"
+	}
+	return name
 }
 
 // useMultiLangFilter returns true when one or more languages are selected
@@ -110,6 +121,19 @@ func (dm *DirModel) comparableStats(e *structure.Entry) structure.CodeStats {
 	var sum structure.CodeStats
 	for _, lang := range dm.selectedLangsList() {
 		sum.Add(e.GetStats(lang))
+	}
+	return sum
+}
+
+// comparableChange returns the Change that should be used for display and
+// sorting under the current language filter. It mirrors comparableStats.
+func (dm *DirModel) comparableChange(e *structure.Entry) structure.Change {
+	if !dm.useMultiLangFilter() {
+		return e.GetChange(dm.activeLang())
+	}
+	var sum structure.Change
+	for _, lang := range dm.selectedLangsList() {
+		sum.Add(e.GetChange(lang))
 	}
 	return sum
 }

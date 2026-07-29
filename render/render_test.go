@@ -82,7 +82,6 @@ func TestTreemapRightClickGoesUp(t *testing.T) {
 	}
 }
 
-
 func TestTreemapRightClickIgnoredDuringSearch(t *testing.T) {
 	root := structure.NewDirEntry("/foo")
 	sub := structure.NewDirEntry("/foo/sub")

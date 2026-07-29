@@ -235,7 +235,7 @@ func TestDirModelPreviewLifecycle(t *testing.T) {
 		t.Error("expected preview mode to start false")
 	}
 
-	dm.ShowFilePreview(p)
+	dm.ShowFilePreview(structure.NewFileEntry(p, nil))
 	if !dm.IsInPreviewMode() {
 		t.Error("expected preview mode to be true")
 	}

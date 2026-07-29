@@ -44,6 +44,8 @@ const (
 	cycleTreemapSize   bindingKey = "M"
 	cycleSortColumn    bindingKey = "s"
 	toggleSortOrder    bindingKey = "S"
+	toggleChanged      bindingKey = "a"
+	previewVersion     bindingKey = "v"
 )
 
 var toggleHelpBinding = key.NewBinding(
@@ -204,4 +206,22 @@ var dirsKeyMap = [][]key.Binding{
 	{
 		toggleHelpBinding,
 	},
+}
+
+// diffKeyMap lists the extra bindings available in Diff and Compare modes.
+var diffKeyMap = []key.Binding{
+	key.NewBinding(
+		key.WithKeys(toggleChanged.String()),
+		key.WithHelp(
+			bindKeyStyle.Render(toggleChanged.String()),
+			helpDescStyle.Render(" - Toggle changed-only / all files"),
+		),
+	),
+	key.NewBinding(
+		key.WithKeys(previewVersion.String()),
+		key.WithHelp(
+			bindKeyStyle.Render(previewVersion.String()),
+			helpDescStyle.Render(" - Preview: switch S1/S2 version"),
+		),
+	),
 }

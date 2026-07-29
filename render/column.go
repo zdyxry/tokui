@@ -12,6 +12,9 @@ const (
 	SortByTotal      SortKey = "total"
 	SortByPercent    SortKey = "percent"
 	SortByComplexity SortKey = "complexity"
+	SortByAdded      SortKey = "added"
+	SortByDeleted    SortKey = "deleted"
+	SortByDelta      SortKey = "delta"
 )
 
 type Column struct {

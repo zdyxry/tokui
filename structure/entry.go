@@ -39,7 +39,15 @@ type Entry struct {
 	IsDir       bool
 	StatsByLang map[string]CodeStats
 	TotalStats  CodeStats
-	Expanded    bool
+	// Change carries the git churn of this entry (Diff/Compare modes). For
+	// directories it is the aggregated sum of the children; Kind and OldPath
+	// stay at their zero values and are meaningless for directory rows, while
+	// Present reports whether any descendant is part of the change set.
+	Change Change
+	// ChangeByLang is the per-language breakdown of Change, aggregated for
+	// directory entries alongside StatsByLang.
+	ChangeByLang map[string]Change
+	Expanded     bool
 }
 
 func NewDirEntry(path string) *Entry {
@@ -119,6 +127,22 @@ func (e *Entry) GetStats(langFilter string) CodeStats {
 	return e.StatsByLang[langFilter]
 }
 
+// GetChange returns the Change of this entry, following the same language
+// filter semantics as GetStats.
+func (e *Entry) GetChange(langFilter string) Change {
+	if langFilter == "" || langFilter == "All" {
+		return e.Change
+	}
+	if e.IsDir {
+		return e.ChangeByLang[langFilter]
+	}
+	// A file's whole change belongs to each of its languages (usually one).
+	if _, ok := e.StatsByLang[langFilter]; ok {
+		return e.Change
+	}
+	return Change{}
+}
+
 func (e *Entry) Languages() []string {
 	if e.StatsByLang == nil {
 		return nil
@@ -139,6 +163,8 @@ func (e *Entry) AggregateStats() {
 
 	e.TotalStats = CodeStats{}
 	e.StatsByLang = make(map[string]CodeStats)
+	e.Change = Change{}
+	e.ChangeByLang = make(map[string]Change)
 
 	for _, child := range e.Child {
 		if child.IsDir {
@@ -146,10 +172,24 @@ func (e *Entry) AggregateStats() {
 		}
 
 		e.TotalStats.Add(child.TotalStats)
+		e.Change.Add(child.Change)
 		for lang, stats := range child.StatsByLang {
 			currentLangStats := e.StatsByLang[lang]
 			currentLangStats.Add(stats)
 			e.StatsByLang[lang] = currentLangStats
+
+			langChange := e.ChangeByLang[lang]
+			langChange.Add(child.changeForLang(lang))
+			e.ChangeByLang[lang] = langChange
 		}
 	}
+}
+
+// changeForLang returns the portion of this entry's Change attributed to the
+// given language. A file's whole change belongs to each of its languages.
+func (e *Entry) changeForLang(lang string) Change {
+	if e.IsDir {
+		return e.ChangeByLang[lang]
+	}
+	return e.Change
 }

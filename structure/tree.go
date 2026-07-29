@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/zdyxry/tokui/gitx"
 	"github.com/zdyxry/tokui/provider"
 )
 
@@ -70,6 +71,131 @@ func (t *Tree) BuildFromProviderResult(result provider.Result, root string) erro
 	return nil
 }
 
+// BuildFromDiff builds the file tree for Diff mode. The full S2-side provider
+// result forms the tree (so the "show all" toggle has the complete snapshot),
+// and the change set is joined onto the matching file entries. Every changed
+// file gets Change.Present set, including zero-churn changes (binary files,
+// pure renames). Changed files missing from the S2 result (deleted files, or
+// files the provider skipped via its own ignore rules) are added with zeroed
+// CodeStats and a language guessed from the file extension; their Kind and
+// churn are preserved. Unchanged files keep a zero Change, which the view
+// layer uses to filter or de-emphasize them. Change paths and repoRoot are
+// interpreted relative to the repository root.
+func (t *Tree) BuildFromDiff(changes []gitx.FileChange, s2 provider.Result, repoRoot string) error {
+	absRoot, err := filepath.Abs(repoRoot)
+	if err != nil {
+		return err
+	}
+
+	t.root = NewDirEntry(repoRoot)
+
+	if err := t.buildFromResult(s2, absRoot); err != nil {
+		return err
+	}
+
+	for _, c := range changes {
+		// Change paths are relative to the repo root; anchor them at absRoot
+		// before normalizing so the lookup key matches the S2 paths.
+		rel := normalizePath(absRoot, filepath.Join(absRoot, filepath.FromSlash(c.Path)))
+		if rel == "" {
+			continue
+		}
+
+		change := Change{
+			Added:   c.Added,
+			Deleted: c.Deleted,
+			Kind:    c.Kind,
+			Present: true,
+			OldPath: c.OldPath,
+		}
+		if entry := t.root.findFile(rel); entry != nil {
+			entry.Change = change
+			continue
+		}
+
+		// Missing from the S2 provider result. For Kind == Deleted this is
+		// expected; any other Kind means the provider skipped the file (e.g.
+		// its own ignore rules) — keep the original Kind and churn either
+		// way, with zeroed stats and a language guessed from the extension.
+		stats := map[string]CodeStats{languageByExt(rel): {}}
+		if entry := t.addFileToTree(t.root, rel, stats); entry != nil {
+			entry.Change = change
+		}
+	}
+
+	t.root.AggregateStats()
+	return nil
+}
+
+// BuildFromCompare builds the file tree for Compare mode: the union of both
+// snapshots forms the tree, each file carries its S2 CodeStats plus the S1
+// side values in Change.PrevCode/PrevComplexity. Files only present in S1
+// (deleted between the refs) are added with zeroed S2 stats and Kind
+// Deleted; files only present in S2 keep zero Prev* values. Files present in
+// S1 get Change.Present set; OldPath stays empty because a rename appears as
+// delete+add under the path-based join.
+func (t *Tree) BuildFromCompare(s1, s2 provider.Result, root string) error {
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return err
+	}
+
+	t.root = NewDirEntry(root)
+
+	if err := t.buildFromResult(s2, absRoot); err != nil {
+		return err
+	}
+
+	for _, f := range s1.Files {
+		rel := normalizePath(absRoot, f.Path)
+		if rel == "" {
+			continue
+		}
+		if entry := t.root.findFile(rel); entry != nil {
+			entry.Change.PrevCode = f.Code
+			entry.Change.PrevComplexity = f.Complexity
+			entry.Change.Present = true
+			continue
+		}
+		lang := f.Language
+		if lang == "" {
+			lang = languageByExt(rel)
+		}
+		stats := map[string]CodeStats{lang: {}}
+		if entry := t.addFileToTree(t.root, rel, stats); entry != nil {
+			entry.Change = Change{
+				Kind:           gitx.Deleted,
+				Present:        true,
+				PrevCode:       f.Code,
+				PrevComplexity: f.Complexity,
+			}
+		}
+	}
+
+	t.root.AggregateStats()
+	return nil
+}
+
+// findFile returns the file entry at the given slash-separated path relative
+// to e, or nil when the path does not resolve to a file entry.
+func (e *Entry) findFile(relativePath string) *Entry {
+	current := e
+	parts := strings.Split(relativePath, "/")
+	for i, part := range parts {
+		if part == "" {
+			continue
+		}
+		current = current.GetChild(part)
+		if current == nil {
+			return nil
+		}
+		if i == len(parts)-1 && !current.IsDir {
+			return current
+		}
+	}
+	return nil
+}
+
 // buildFromResult groups per-file stats by relative path and inserts them into
 // the tree using the provided analysis root for path normalization.
 func (t *Tree) buildFromResult(result provider.Result, absPath string) error {
@@ -96,7 +222,7 @@ func (t *Tree) buildFromResult(result provider.Result, absPath string) error {
 	return nil
 }
 
-func (t *Tree) addFileToTree(root *Entry, relativePath string, stats map[string]CodeStats) {
+func (t *Tree) addFileToTree(root *Entry, relativePath string, stats map[string]CodeStats) *Entry {
 	parts := strings.Split(relativePath, "/")
 	currentNode := root
 
@@ -124,8 +250,10 @@ func (t *Tree) addFileToTree(root *Entry, relativePath string, stats map[string]
 			filePath := filepath.Join(currentNode.Path, fileName)
 			fileEntry := NewFileEntry(filePath, stats)
 			currentNode.AddChild(fileEntry)
+			return fileEntry
 		}
 	}
+	return nil
 }
 
 // normalizePath converts a raw file path (absolute or relative) to a path

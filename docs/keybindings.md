@@ -66,6 +66,7 @@
 | `M` | 循环 Treemap 块大小指标（Total → Complexity → Bytes，需 scc Provider）。 |
 | `s` | 循环排序列。 |
 | `S` | 切换当前排序列的升序/降序。 |
+| `a` | （Diff/Compare 模式）切换「仅变更文件 / 全量文件」；全量时无变更的行灰色显示。 |
 | `?` | 显示/隐藏完整帮助面板。 |
 | `q` / `Ctrl+C` | 退出应用。 |
 
@@ -74,6 +75,14 @@
 按 `s` 会在以下列之间循环：
 
 `Name` → `Languages` → `Code` → `Comments` → `Blanks` → `Total` → `Percent` → `Complexity`
+
+Diff 模式（`--diff`）下排序列不同，循环为：
+
+`Name` → `+` → `-` → `Δ` → `%` → `Code` → `Total`（默认按 `|Δ|` 降序；`%` 为该目录/文件 churn 占当前目录总 churn 的百分比）
+
+Compare 模式（`--compare`）下循环为：
+
+`Name` → `ΔCode` → `ΔCmplx`（默认按 `|ΔCode|` 降序）
 
 按 `S` 切换方向。文本列默认升序，数值列默认降序。
 
@@ -144,6 +153,7 @@
 | `↑` / `↓` / `j` / `k` | 向上/向下滚动一行。 |
 | `pgup` / `pgdown` | 向上/向下滚动一页。 |
 | `home` / `end` | 跳到文件顶部/底部。 |
+| `v` | （Diff/Compare 模式）在文件的 S2 版本与 S1 版本之间切换，标题栏显示当前版本标记（如 `S1: main` / `S2: worktree`）。已删除文件无 S2 版本，直接预览 S1 版本且不可切换。 |
 
 > 预览底部提示显示 `q/Esc` 关闭，方向键/`PgUp`/`PgDn`/`Home`/`End` 导航。
 
@@ -180,6 +190,7 @@ READY / TREE / TREEMAP
 ├── 搜索: Ctrl+P
 ├── 图表: Ctrl+W
 ├── 排序: s (换列), S (换方向)
+├── Diff/Compare 模式: a (仅变更/全量), v (预览切换 S1/S2)
 ├── 编辑: e
 ├── 帮助: ?
 └── 退出: q, Ctrl+C
@@ -207,7 +218,8 @@ SELECT_LANG (Ctrl+L)
 PREVIEW
 ├── q/Esc: 关闭
 ├── ↑/↓/j/k/pgup/pgdown: 滚动
-└── home/end: 跳到文件首尾
+├── home/end: 跳到文件首尾
+└── v: 切换 S1/S2 版本（Diff/Compare 模式）
 ```
 
 ---

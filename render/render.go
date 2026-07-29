@@ -71,7 +71,7 @@ func (vm *ViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							vm.dirModel.Update(ScanFinished{ResetCursor: true})
 						}
 					} else {
-						vm.dirModel.ShowFilePreview(selectedEntry.Path)
+						vm.dirModel.ShowFilePreview(selectedEntry)
 					}
 				} else if vm.dirModel.IsParentSelected() {
 					vm.levelUp()
@@ -177,7 +177,7 @@ func (vm *ViewModel) View() string {
 }
 
 func (vm *ViewModel) levelDown() {
-	if vm.dirModel.dirsTable.Rows() == nil || len(vm.dirModel.dirsTable.SelectedRow()) < 3 {
+	if vm.dirModel.dirsTable.Rows() == nil {
 		return
 	}
 
@@ -186,17 +186,20 @@ func (vm *ViewModel) levelDown() {
 		return
 	}
 
-	selectedRow := vm.dirModel.dirsTable.SelectedRow()
-	entryName := selectedRow[2]
-	filePath := vm.nav.AbsPathFromSelectedRow(selectedRow)
-
-	entry := vm.nav.Entry().GetChild(entryName)
-	if entry != nil && !entry.IsDir {
-		vm.dirModel.ShowFilePreview(filePath)
+	// Resolve the entry through the table's entry mapping instead of the
+	// rendered name cell: the cell may carry faint styling or a deleted-file
+	// marker that would never match a tree child.
+	entry := vm.dirModel.SelectedEntry()
+	if entry == nil {
 		return
 	}
 
-	vm.nav.Down(entryName, vm.dirModel.dirsTable.Cursor(), 1)
+	if !entry.IsDir {
+		vm.dirModel.ShowFilePreview(entry)
+		return
+	}
+
+	vm.nav.Down(entry.Name(), vm.dirModel.dirsTable.Cursor(), 1)
 	vm.dirModel.Update(ScanFinished{ResetCursor: true})
 }
 
@@ -245,7 +248,7 @@ func (vm *ViewModel) treemapDrillDown() {
 		vm.dirModel.treemapSelected = 0
 		vm.dirModel.Update(ScanFinished{ResetCursor: true})
 	} else {
-		vm.dirModel.ShowFilePreview(entry.Path)
+		vm.dirModel.ShowFilePreview(entry)
 	}
 }
 

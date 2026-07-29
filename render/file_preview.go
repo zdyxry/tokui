@@ -1,6 +1,7 @@
 package render
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -10,6 +11,9 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/zdyxry/tokui/gitx"
+	"github.com/zdyxry/tokui/structure"
 )
 
 // FilePreview represents the file preview component using viewport
@@ -22,10 +26,38 @@ type FilePreview struct {
 	ready    bool
 	content  string
 	errorMsg string
+
+	// Diff-mode S1/S2 version switching. s2Ref empty means the working tree.
+	repoRoot  string
+	relPath   string // repo-relative path used for "git show"
+	s1Ref     string
+	s1Label   string
+	s2Ref     string
+	s2Label   string
+	showingS1 bool
+	s2Missing bool // no S2 version (deleted file); preview is S1-only
+
+	// Change metadata of the previewed file (Diff/Compare modes).
+	kind    gitx.ChangeKind
+	oldPath string // S1-side path for renamed files
 }
 
 // NewFilePreview creates a new file preview component
 func NewFilePreview(filePath string, width, height int) *FilePreview {
+	return newFilePreview(filePath, width, height, ModeInfo{}, structure.Change{})
+}
+
+// NewFilePreviewDiff creates a file preview for Diff and Compare modes. The
+// S2 version is shown first (working tree, or the S2 ref when the range
+// targets a historical snapshot); the "v" key switches to the S1 version
+// loaded on demand via "git show". Deleted files fall back to the S1 version
+// directly; renamed files resolve their S1 content through Change.OldPath;
+// added files have no S1 version and show a hint instead of a git error.
+func NewFilePreviewDiff(filePath string, width, height int, mode ModeInfo, change structure.Change) *FilePreview {
+	return newFilePreview(filePath, width, height, mode, change)
+}
+
+func newFilePreview(filePath string, width, height int, mode ModeInfo, change structure.Change) *FilePreview {
 	// Calculate preview window dimensions (80% of terminal size)
 	previewWidth := int(float64(width) * 0.8)
 	previewHeight := int(float64(height) * 0.8)
@@ -45,6 +77,19 @@ func NewFilePreview(filePath string, width, height int) *FilePreview {
 		height:   previewHeight, // Use preview height instead of terminal height
 	}
 
+	if mode.Changed() && mode.RepoRoot != "" {
+		fp.repoRoot = mode.RepoRoot
+		fp.s1Ref = mode.S1Ref
+		fp.s1Label = mode.S1Label
+		fp.s2Ref = mode.S2Ref
+		fp.s2Label = mode.S2Label
+		fp.kind = change.Kind
+		fp.oldPath = change.OldPath
+		if rel, err := filepath.Rel(mode.RepoRoot, filePath); err == nil {
+			fp.relPath = filepath.ToSlash(rel)
+		}
+	}
+
 	// Initialize viewport - leave space for borders, title, footer and padding
 	viewportWidth := previewWidth - 10  // Leave space for box borders and padding
 	viewportHeight := previewHeight - 8 // Leave space for title, footer and padding
@@ -56,18 +101,89 @@ func NewFilePreview(filePath string, width, height int) *FilePreview {
 	return fp
 }
 
+// CanToggleVersion reports whether the preview can switch between the S1 and
+// S2 versions of the file (Diff mode with an S1 ref and an available S2
+// version).
+func (fp *FilePreview) CanToggleVersion() bool {
+	return fp.s1Ref != "" && !fp.s2Missing
+}
+
+// ToggleVersion switches between the S2 and S1 versions of the file,
+// reloading the content on demand.
+func (fp *FilePreview) ToggleVersion() {
+	if !fp.CanToggleVersion() {
+		return
+	}
+	fp.showingS1 = !fp.showingS1
+	fp.viewport.GotoTop()
+	fp.loadFileContent()
+}
+
 // loadFileContent reads the file content and sets it in the viewport
 func (fp *FilePreview) loadFileContent() {
-	content, err := fp.readFileContent(fp.filePath)
+	content, err := fp.loadCurrentVersion()
+	if err != nil && fp.s1Ref != "" && !fp.showingS1 && fp.kind == gitx.Deleted {
+		// A deleted file has no S2 version: fall back to the S1 version
+		// directly. Other S2 read failures surface as errors instead of being
+		// misread as a deletion.
+		fp.s2Missing = true
+		fp.showingS1 = true
+		content, err = fp.loadCurrentVersion()
+	}
 	if err != nil {
 		fp.errorMsg = fmt.Sprintf("Error reading file: %v", err)
 		fp.content = fp.errorMsg
 	} else {
+		fp.errorMsg = ""
 		fp.content = content
 	}
 
 	fp.viewport.SetContent(fp.content)
 	fp.ready = true
+}
+
+// loadCurrentVersion loads the version of the file matching the current
+// showingS1 state.
+func (fp *FilePreview) loadCurrentVersion() (string, error) {
+	if fp.showingS1 {
+		if fp.kind == gitx.Added {
+			// The file did not exist in S1; don't ask git for a path it
+			// cannot resolve.
+			label := fp.s1Label
+			if label == "" {
+				label = fp.s1Ref
+			}
+			return fmt.Sprintf("S1 (%s) 无此文件（新增）", label), nil
+		}
+		path := fp.relPath
+		if fp.kind == gitx.Renamed && fp.oldPath != "" {
+			// The file lived under a different path in S1.
+			path = fp.oldPath
+		}
+		return fp.readGitFile(fp.s1Ref, path)
+	}
+	if fp.s2Ref != "" {
+		return fp.readGitFile(fp.s2Ref, fp.relPath)
+	}
+	return fp.readFileContent(fp.filePath)
+}
+
+// readGitFile loads the file content at the given ref via "git show",
+// applying the same binary-content and size guards as filesystem reads.
+func (fp *FilePreview) readGitFile(ref, path string) (string, error) {
+	data, err := gitx.ShowFile(fp.repoRoot, ref, path)
+	if err != nil {
+		if errors.Is(err, gitx.ErrFileTooLarge) {
+			return "File too large to preview (> 10 MB)", nil
+		}
+		return "", err
+	}
+	content := string(data)
+	if fp.containsBinaryData(content) {
+		return fmt.Sprintf("Binary file detected\nFile size: %.2f KB\nUse appropriate tools to view this file.",
+			float64(len(data))/1024), nil
+	}
+	return content, nil
 }
 
 // readFileContent reads file content with size limits for safety
@@ -196,8 +312,11 @@ func (fp *FilePreview) View() string {
 		return fp.renderBox(fp.errorMsg)
 	}
 
-	// Create the title
+	// Create the title, including the S1/S2 version marker in Diff mode
 	title := fmt.Sprintf(" File Preview: %s ", fp.fileName)
+	if label := fp.versionLabel(); label != "" {
+		title = fmt.Sprintf(" File Preview: %s · %s ", fp.fileName, label)
+	}
 
 	// Create the content with viewport
 	content := fp.viewport.View()
@@ -211,6 +330,18 @@ func (fp *FilePreview) View() string {
 	}
 
 	return fp.renderBoxWithContent(title, content, scrollInfo)
+}
+
+// versionLabel returns the S1/S2 marker shown in the preview title bar, or an
+// empty string outside Diff mode.
+func (fp *FilePreview) versionLabel() string {
+	if fp.s1Ref == "" {
+		return ""
+	}
+	if fp.showingS1 {
+		return fmt.Sprintf("S1: %s", fp.s1Label)
+	}
+	return fmt.Sprintf("S2: %s", fp.s2Label)
 }
 
 // renderBox renders a simple box with content
@@ -250,6 +381,9 @@ func (fp *FilePreview) renderBoxWithContent(title, content, scrollInfo string) s
 
 	// Create the footer with help text and scroll info
 	helpText := "Press q/Esc to close, ↑/↓/j/k to scroll, PgUp/PgDn/Home/End to navigate"
+	if fp.CanToggleVersion() {
+		helpText += ", v: switch S1/S2"
+	}
 	var footer string
 	if scrollInfo != "" {
 		// Calculate spacing for justified layout

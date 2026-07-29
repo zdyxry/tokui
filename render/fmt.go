@@ -27,6 +27,15 @@ func formatNumber(n int64) string {
 	return string(out)
 }
 
+// formatSignedNum renders a delta with thousands separators and an explicit
+// "+" sign for positive values.
+func formatSignedNum(n int64) string {
+	if n > 0 {
+		return "+" + formatNumber(n)
+	}
+	return formatNumber(n)
+}
+
 // truncateVisual truncates s to fit within maxWidth visual cells.
 func truncateVisual(s string, maxWidth int) string {
 	if maxWidth <= 0 {

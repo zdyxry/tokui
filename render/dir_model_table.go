@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 
 	"github.com/zdyxry/tokui/structure"
 )
@@ -23,6 +24,37 @@ func (dm *DirModel) visibleColumns() []Column {
 				continue
 			}
 		case SortByLanguages, SortByComments, SortByBlanks:
+			if dm.width < 60 && dm.sortState.Key != c.SortKey {
+				continue
+			}
+		case SortByTotal:
+			// Diff mode hides columns from least to most important as the
+			// terminal narrows: Total, %, Code, Δ, -, + (Name is never hidden).
+			if dm.modeInfo.Diff() && dm.width < 120 && dm.sortState.Key != c.SortKey {
+				continue
+			}
+		case SortByPercent:
+			if dm.modeInfo.Diff() && dm.width < 115 && dm.sortState.Key != c.SortKey {
+				continue
+			}
+		case SortByCode:
+			// In Diff mode Code is secondary; in Compare mode the S1 → S2
+			// column is the core content and only yields to very narrow screens.
+			if dm.modeInfo.Diff() && dm.width < 105 && dm.sortState.Key != c.SortKey {
+				continue
+			}
+			if dm.modeInfo.Compare() && dm.width < 60 && dm.sortState.Key != c.SortKey {
+				continue
+			}
+		case SortByDelta:
+			if dm.width < 90 && dm.sortState.Key != c.SortKey {
+				continue
+			}
+		case SortByDeleted:
+			if dm.width < 75 && dm.sortState.Key != c.SortKey {
+				continue
+			}
+		case SortByAdded:
 			if dm.width < 60 && dm.sortState.Key != c.SortKey {
 				continue
 			}
@@ -65,6 +97,14 @@ func (dm *DirModel) buildParentRow(cols []Column) table.Row {
 				row[i] = ".."
 			case SortByLanguages, SortByPercent:
 				row[i] = ""
+			case SortByCode:
+				// In Compare mode this column holds an "S1 → S2" pair, which
+				// is meaningless for the synthetic parent row.
+				if dm.modeInfo.Compare() {
+					row[i] = ""
+				} else {
+					row[i] = "0"
+				}
 			default:
 				row[i] = "0"
 			}
@@ -74,6 +114,7 @@ func (dm *DirModel) buildParentRow(cols []Column) table.Row {
 }
 
 func (dm *DirModel) buildRow(cols []Column, entry *structure.Entry, name, langStr string, stats structure.CodeStats, percent float64) table.Row {
+	churn := dm.comparableChange(entry)
 	row := make(table.Row, len(cols))
 	for i, c := range cols {
 		switch i {
@@ -88,7 +129,11 @@ func (dm *DirModel) buildRow(cols []Column, entry *structure.Entry, name, langSt
 			case SortByLanguages:
 				row[i] = langStr
 			case SortByCode:
-				row[i] = strconv.FormatInt(stats.Code, 10)
+				if dm.modeInfo.Compare() {
+					row[i] = fmt.Sprintf("%s → %s", formatNumber(churn.PrevCode), formatNumber(stats.Code))
+				} else {
+					row[i] = strconv.FormatInt(stats.Code, 10)
+				}
 			case SortByComments:
 				row[i] = strconv.FormatInt(stats.Comments, 10)
 			case SortByBlanks:
@@ -96,15 +141,80 @@ func (dm *DirModel) buildRow(cols []Column, entry *structure.Entry, name, langSt
 			case SortByTotal:
 				row[i] = strconv.FormatInt(stats.Total(), 10)
 			case SortByPercent:
-				row[i] = fmt.Sprintf("%.2f %%", percent)
+				if dm.modeInfo.Diff() {
+					share := float64(churnVolume(churn)) / float64(dm.parentChurnVolume()) * 100
+					row[i] = fmt.Sprintf("%.1f %%", share)
+				} else {
+					row[i] = fmt.Sprintf("%.2f %%", percent)
+				}
 			case SortByComplexity:
-				row[i] = strconv.FormatInt(stats.Complexity, 10)
+				if dm.modeInfo.Compare() {
+					row[i] = formatSigned(stats.Complexity-churn.PrevComplexity, false)
+				} else {
+					row[i] = strconv.FormatInt(stats.Complexity, 10)
+				}
+			case SortByAdded:
+				row[i] = formatSigned(churn.Added, false)
+			case SortByDeleted:
+				row[i] = formatSigned(churn.Deleted, true)
+			case SortByDelta:
+				if dm.modeInfo.Compare() {
+					row[i] = formatSigned(stats.Code-churn.PrevCode, false)
+				} else {
+					row[i] = formatSigned(churn.Delta(), false)
+				}
 			default:
 				row[i] = ""
 			}
 		}
 	}
 	return row
+}
+
+// formatSigned renders a churn value with an explicit sign: positive values
+// get "+" ("-" when neg is set), negative values keep their own sign, and
+// zero stays a plain "0".
+func formatSigned(n int64, neg bool) string {
+	if n == 0 {
+		return "0"
+	}
+	if n < 0 {
+		return strconv.FormatInt(n, 10)
+	}
+	sign := "+"
+	if neg {
+		sign = "-"
+	}
+	return sign + strconv.FormatInt(n, 10)
+}
+
+var faintRowStyle = lipgloss.NewStyle().Faint(true)
+
+// faintUnchangedRows de-emphasizes rows whose entries carry no churn. Cells
+// are truncated before styling so the escape-sequence overhead can never push
+// a cell past its column width: the bubbles table truncates by rune width,
+// which is not ANSI-aware.
+func (dm *DirModel) faintUnchangedRows(rows []table.Row, minWidths []int) {
+	const escapeOverhead = 6 // "\x1b[2m" + "\x1b[0m" as counted by runewidth
+	for ri, te := range dm.tableEntries {
+		if ri >= len(rows) || te.isParent {
+			continue
+		}
+		if dm.entryChanged(te.entry) {
+			continue
+		}
+		row := rows[ri]
+		for i := range row {
+			if i == 1 {
+				continue // hidden path column must stay machine-readable
+			}
+			limit := minWidths[i] - escapeOverhead
+			if limit < 1 {
+				continue
+			}
+			row[i] = faintRowStyle.Render(runewidth.Truncate(row[i], limit, "…"))
+		}
+	}
 }
 
 // updateTableData updates the table rows based on current filters and state
@@ -238,7 +348,7 @@ func (dm *DirModel) updateTableData(resetCursor ...bool) {
 				if total == 0 {
 					continue
 				}
-				name := child.Name()
+				name := dm.displayName(child)
 				if lipgloss.Width(name) > maxNameWidth {
 					maxNameWidth = lipgloss.Width(name)
 				}
@@ -263,7 +373,7 @@ func (dm *DirModel) updateTableData(resetCursor ...bool) {
 				continue
 			}
 
-			name := child.Name()
+			name := dm.displayName(child)
 			if lipgloss.Width(name) > maxNameWidth {
 				maxNameWidth = lipgloss.Width(name)
 			}
@@ -314,6 +424,12 @@ func (dm *DirModel) updateTableData(resetCursor ...bool) {
 		if minWidths[2] < 20 {
 			minWidths[2] = 20
 		}
+	}
+
+	// In Diff/Compare mode with the changed-only filter off, rows without
+	// changes are de-emphasized as navigation context.
+	if dm.modeInfo.Changed() && !dm.changedOnly() {
+		dm.faintUnchangedRows(rows, minWidths)
 	}
 
 	columns := make([]table.Column, len(cols))
