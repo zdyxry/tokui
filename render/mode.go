@@ -19,11 +19,11 @@ const (
 // bar summary and the S1/S2 preview switching.
 type ModeInfo struct {
 	Kind  ModeKind
-	Range string // the --diff range as typed by the user
+	Range string // status-bar label for the diff range or ref
 
 	RepoRoot string // repository root; entry paths live under it
-	S1Ref    string // base ref for "git show" previews
-	S1Label  string // human-readable S1 marker, e.g. "main"
+	S1Ref    string // base ref for "git show" previews; "" means the index
+	S1Label  string // human-readable S1 marker, e.g. "main" or "index"
 	S2Ref    string // target ref; empty means the working tree
 	S2Label  string // human-readable S2 marker, e.g. "worktree"
 }

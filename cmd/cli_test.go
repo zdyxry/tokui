@@ -9,164 +9,155 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func TestPreprocessDiffArgs(t *testing.T) {
+// useDevNullStdin points os.Stdin at /dev/null (a character device) so the
+// pipe-mode check passes and subcommand execution reaches mode dispatch.
+func useDevNullStdin(t *testing.T) {
+	t.Helper()
+	devNull, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldStdin := os.Stdin
+	os.Stdin = devNull
+	t.Cleanup(func() {
+		os.Stdin = oldStdin
+		devNull.Close()
+	})
+}
+
+// usePipeStdin points os.Stdin at a pipe so the pipe-mode check triggers.
+func usePipeStdin(t *testing.T) {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldStdin := os.Stdin
+	os.Stdin = r
+	t.Cleanup(func() {
+		os.Stdin = oldStdin
+		r.Close()
+		w.Close()
+	})
+}
+
+func TestNewDiffSpec(t *testing.T) {
 	tests := []struct {
-		name string
-		args []string
-		want []string
+		name     string
+		rangeArg string
+		staged   bool
+		wantSpec diffSpec
 	}{
-		{"no args", nil, []string{}},
-		{"bare diff", []string{"--diff"}, []string{"--diff"}},
-		{"bare diff at end", []string{"subdir", "--diff"}, []string{"subdir", "--diff"}},
-		{"space value", []string{"--diff", "HEAD~3"}, []string{"--diff=HEAD~3"}},
-		{"equals form untouched", []string{"--diff=HEAD~3"}, []string{"--diff=HEAD~3"}},
-		{"equals empty untouched", []string{"--diff="}, []string{"--diff="}},
-		{"value then subdir", []string{"--diff", "HEAD~3", "subdir"}, []string{"--diff=HEAD~3", "subdir"}},
-		{"positional before flag", []string{"subdir", "--diff", "main...HEAD"}, []string{"subdir", "--diff=main...HEAD"}},
-		{"next token is a flag", []string{"--diff", "--tree"}, []string{"--diff", "--tree"}},
-		{"next token is terminator", []string{"--diff", "--", "x"}, []string{"--diff", "--", "x"}},
-		{"after terminator untouched", []string{"--", "--diff", "x"}, []string{"--", "--diff", "x"}},
-		{"after terminator with prior flags", []string{"--tree", "--", "--diff", "x"}, []string{"--tree", "--", "--diff", "x"}},
-		{"other flags untouched", []string{"--compare", "a..b"}, []string{"--compare", "a..b"}},
-		{"double diff", []string{"--diff", "A", "--diff", "B"}, []string{"--diff=A", "--diff=B"}},
+		{
+			name: "bare diff is worktree vs index",
+			wantSpec: diffSpec{
+				s1Label:    "index",
+				s2Label:    "worktree",
+				worktree:   true,
+				rangeLabel: "worktree (unstaged)",
+			},
+		},
+		{
+			name:   "staged defaults to HEAD",
+			staged: true,
+			wantSpec: diffSpec{
+				cached:     true,
+				s1Ref:      "HEAD",
+				s1Label:    "HEAD",
+				s2Label:    "worktree",
+				worktree:   true,
+				rangeLabel: "--staged",
+			},
+		},
+		{
+			name:     "staged with rev",
+			rangeArg: "HEAD~2",
+			staged:   true,
+			wantSpec: diffSpec{
+				rev:        "HEAD~2",
+				cached:     true,
+				s1Ref:      "HEAD~2",
+				s1Label:    "HEAD~2",
+				s2Label:    "worktree",
+				worktree:   true,
+				rangeLabel: "HEAD~2 --staged",
+			},
+		},
+		{
+			name:     "single rev diffs against worktree",
+			rangeArg: "HEAD~3",
+			wantSpec: diffSpec{
+				rev:        "HEAD~3",
+				s1Ref:      "HEAD~3",
+				s1Label:    "HEAD~3",
+				s2Label:    "worktree",
+				worktree:   true,
+				rangeLabel: "HEAD~3",
+			},
+		},
+		{
+			name:     "two-dot range diffs two refs",
+			rangeArg: "v1.0..v2.0",
+			wantSpec: diffSpec{
+				rev:        "v1.0..v2.0",
+				s1Ref:      "v1.0",
+				s1Label:    "v1.0",
+				s2Ref:      "v2.0",
+				s2Label:    "v2.0",
+				rangeLabel: "v1.0..v2.0",
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := preprocessDiffArgs(tt.args)
-			if len(got) != len(tt.want) {
-				t.Fatalf("preprocessDiffArgs(%v) = %v, want %v", tt.args, got, tt.want)
-			}
-			for i := range got {
-				if got[i] != tt.want[i] {
-					t.Fatalf("preprocessDiffArgs(%v) = %v, want %v", tt.args, got, tt.want)
-				}
+			if got := newDiffSpec(tt.rangeArg, tt.staged); got != tt.wantSpec {
+				t.Errorf("newDiffSpec(%q, %v) = %+v, want %+v", tt.rangeArg, tt.staged, got, tt.wantSpec)
 			}
 		})
 	}
 }
 
-// parseOnlyCmd returns a fresh root command whose RunE only records the
-// positional args, so flag parsing can be tested without entering the TUI.
-func parseOnlyCmd(captured *[]string) *cobra.Command {
-	cmd := newAppCmd()
-	cmd.RunE = func(_ *cobra.Command, args []string) error {
-		*captured = args
-		return nil
-	}
-	return cmd
-}
-
-func TestCobraFlagParsing(t *testing.T) {
-	tests := []struct {
-		name        string
-		args        []string
-		wantDiff    string
-		wantCompare string
-		wantRef     string
-		wantArgs    []string
-	}{
-		{"diff space value", []string{"--diff", "HEAD~3"}, "HEAD~3", "", "", nil},
-		{"bare diff means HEAD", []string{"--diff"}, "HEAD", "", "", nil},
-		{"diff equals form", []string{"--diff=HEAD~3"}, "HEAD~3", "", "", nil},
-		{"diff value and subdir", []string{"--diff", "HEAD~3", "subdir"}, "HEAD~3", "", "", []string{"subdir"}},
-		{"bare diff and subdir", []string{"--diff", "subdir"}, "subdir", "", "", nil}, // see note below
-		{"compare", []string{"--compare", "a..b"}, "", "a..b", "", nil},
-		{"ref", []string{"--ref", "v1.0"}, "", "", "v1.0", nil},
-		{"ref with dir", []string{"--ref", "v1.0", "subdir"}, "", "", "v1.0", []string{"subdir"}},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var gotArgs []string
-			cmd := parseOnlyCmd(&gotArgs)
-			cmd.SetArgs(preprocessDiffArgs(tt.args))
-			if err := cmd.Execute(); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-			if diffRange != tt.wantDiff {
-				t.Errorf("diffRange = %q, want %q", diffRange, tt.wantDiff)
-			}
-			if compareRange != tt.wantCompare {
-				t.Errorf("compareRange = %q, want %q", compareRange, tt.wantCompare)
-			}
-			if refName != tt.wantRef {
-				t.Errorf("refName = %q, want %q", refName, tt.wantRef)
-			}
-			if len(gotArgs) != len(tt.wantArgs) {
-				t.Fatalf("positional args = %v, want %v", gotArgs, tt.wantArgs)
-			}
-			for i := range gotArgs {
-				if gotArgs[i] != tt.wantArgs[i] {
-					t.Fatalf("positional args = %v, want %v", gotArgs, tt.wantArgs)
-				}
-			}
-		})
+func TestRootPositionalDirectoryStillWorks(t *testing.T) {
+	// With subcommands registered, a plain directory argument must still reach
+	// the root command (not be rejected as an "unknown command").
+	for _, args := range [][]string{{"somedir"}, {"--tree", "somedir"}} {
+		var gotArgs []string
+		cmd := newAppCmd()
+		cmd.RunE = func(_ *cobra.Command, args []string) error {
+			gotArgs = args
+			return nil
+		}
+		cmd.SetArgs(args)
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("Execute(%v): %v", args, err)
+		}
+		if len(gotArgs) != 1 || gotArgs[0] != "somedir" {
+			t.Errorf("Execute(%v): positional args = %v, want [somedir]", args, gotArgs)
+		}
 	}
 }
 
-// Note on "--diff subdir": by design a token after --diff is consumed as the
-// range value; scoping to a subdirectory requires a range first
-// ("--diff HEAD~3 subdir") or the equals form. This pins the behavior.
-
-func TestCobraGitFlagsMutuallyExclusive(t *testing.T) {
+func TestSubcommandPipeConflict(t *testing.T) {
 	tests := []struct {
 		name string
 		args []string
 	}{
-		{"diff and compare", []string{"--diff", "HEAD", "--compare", "a..b"}},
-		{"compare and ref", []string{"--compare", "a..b", "--ref", "v1"}},
-		{"diff and ref", []string{"--diff=HEAD", "--ref", "v1"}},
+		{"diff", []string{"diff", "HEAD"}},
+		{"bare diff", []string{"diff"}},
+		{"staged diff", []string{"diff", "--staged"}},
+		{"show", []string{"show"}},
+		{"compare", []string{"compare", "a..b"}},
+		{"ref", []string{"ref", "v1"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var gotArgs []string
-			cmd := parseOnlyCmd(&gotArgs)
-			cmd.SetArgs(preprocessDiffArgs(tt.args))
+			usePipeStdin(t)
+			cmd := newAppCmd() // also resets the package-level flag variables
+			cmd.SetArgs(tt.args)
 			err := cmd.Execute()
 			if err == nil {
-				t.Fatal("expected mutual exclusion error")
-			}
-			if !strings.Contains(err.Error(), "if any flags in the group") {
-				t.Errorf("unexpected error: %v", err)
-			}
-			var cliErr *CLIError
-			if errors.As(err, &cliErr) {
-				t.Errorf("cobra validation error should not be a CLIError: %v", err)
-			}
-		})
-	}
-}
-
-func TestRunAppPipeWithGitFlagRejected(t *testing.T) {
-	for _, flag := range []string{"diff", "compare", "ref"} {
-		t.Run(flag, func(t *testing.T) {
-			cmd := newAppCmd() // also resets the package-level flag variables
-			r, w, err := os.Pipe()
-			if err != nil {
-				t.Fatal(err)
-			}
-			oldStdin := os.Stdin
-			os.Stdin = r
-			defer func() {
-				os.Stdin = oldStdin
-				r.Close()
-				w.Close()
-			}()
-
-			switch flag {
-			case "diff":
-				diffRange = "HEAD"
-			case "compare":
-				compareRange = "a..b"
-			case "ref":
-				refName = "v1"
-			}
-			defer func() { diffRange, compareRange, refName = "", "", "" }()
-
-			err = runApp(cmd, nil)
-			if err == nil {
-				t.Fatal("expected pipe/git-flag conflict error")
+				t.Fatal("expected pipe conflict error")
 			}
 			var cliErr *CLIError
 			if !errors.As(err, &cliErr) {
@@ -179,6 +170,87 @@ func TestRunAppPipeWithGitFlagRejected(t *testing.T) {
 	}
 }
 
+func TestSubcommandTrailingDirectory(t *testing.T) {
+	// A non-repo directory as the trailing positional argument must reach the
+	// mode runner: the error names that directory, proving it overrode --root.
+	dir := t.TempDir()
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{"diff", []string{"diff", "HEAD", dir}},
+		{"show", []string{"show", "HEAD", dir}},
+		{"compare", []string{"compare", "a..b", dir}},
+		{"ref", []string{"ref", "v1", dir}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			useDevNullStdin(t)
+			cmd := newAppCmd()
+			cmd.SetArgs(tt.args)
+			err := cmd.Execute()
+			if err == nil {
+				t.Fatal("expected not-a-repo error")
+			}
+			if !strings.Contains(err.Error(), "not a git repository: "+dir) {
+				t.Errorf("expected error naming %q, got %v", dir, err)
+			}
+		})
+	}
+}
+
+func TestDiffRangeArgumentParsed(t *testing.T) {
+	// In a real repo, a bogus range argument must surface as a git revision
+	// error (not "not a git repository"), proving the range/dir split.
+	useDevNullStdin(t)
+	repo := initCompareRepo(t)
+	cmd := newAppCmd()
+	cmd.SetArgs([]string{"diff", "no-such-rev", repo})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for bogus range")
+	}
+	if !strings.Contains(err.Error(), "no-such-rev") {
+		t.Errorf("expected git revision error mentioning the range, got %v", err)
+	}
+}
+
+func TestShowRejectsRangeArgument(t *testing.T) {
+	useDevNullStdin(t)
+	cmd := newAppCmd()
+	cmd.SetArgs([]string{"show", "a..b"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected range rejection error")
+	}
+	var cliErr *CLIError
+	if !errors.As(err, &cliErr) {
+		t.Errorf("expected CLIError, got %T: %v", err, err)
+	}
+	if !strings.Contains(err.Error(), "tokui diff a..b") {
+		t.Errorf("expected a hint to use 'tokui diff', got %v", err)
+	}
+}
+
+func TestCompareAndRefRequireArgument(t *testing.T) {
+	for _, args := range [][]string{{"compare"}, {"ref"}} {
+		t.Run(args[0], func(t *testing.T) {
+			useDevNullStdin(t)
+			cmd := newAppCmd()
+			cmd.SetArgs(args)
+			err := cmd.Execute()
+			if err == nil {
+				t.Fatal("expected missing-argument error")
+			}
+			// Cobra argument validation errors are plain errors, not CLIErrors.
+			var cliErr *CLIError
+			if errors.As(err, &cliErr) {
+				t.Errorf("cobra validation error should not be a CLIError: %v", err)
+			}
+		})
+	}
+}
+
 func TestGitModesWithoutGitBinary(t *testing.T) {
 	// An empty PATH makes every git invocation fail with "not found".
 	t.Setenv("PATH", t.TempDir())
@@ -186,7 +258,16 @@ func TestGitModesWithoutGitBinary(t *testing.T) {
 
 	t.Run("diff", func(t *testing.T) {
 		err := runGitModeExpectingInstallHint(t, func() error {
-			_, err := runDiffMode(nil, stubProvider{}, dir, "HEAD")
+			_, err := runDiffMode(nil, stubProvider{}, dir, newDiffSpec("HEAD", false))
+			return err
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	})
+	t.Run("show", func(t *testing.T) {
+		err := runGitModeExpectingInstallHint(t, func() error {
+			_, err := runShowMode(nil, stubProvider{}, dir, "HEAD")
 			return err
 		})
 		if err != nil {

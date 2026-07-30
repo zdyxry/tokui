@@ -42,10 +42,12 @@ git **不是统计后端**，不适合实现为第三个 `provider.Provider`。�
 ### 场景 A：PR / commit range 影响面分析（Diff 模式，默认推荐）
 
 ```bash
-tokui --diff main...HEAD      # 当前分支相对 main 的改动
-tokui --diff HEAD~3           # 最近 3 个 commit
-tokui --diff HEAD             # 工作区未提交的改动
-tokui --diff                  # 同上，裸 --diff 等价于 --diff HEAD（同 git diff）
+tokui diff main...HEAD      # 当前分支相对 main 的改动
+tokui diff HEAD~3           # 最近 3 个 commit
+tokui diff HEAD             # 相对 HEAD 的工作区改动（含未暂存）
+tokui diff                  # 工作区未暂存的改动（同 git diff，S1 为 index）
+tokui diff --staged         # 已暂存的改动（同 git diff --cached）
+tokui show HEAD             # 单个 commit 的改动（同 git show）
 ```
 
 树中只包含 diff 涉及的文件，目录照常聚合。回答："这次改动动了多少代码、集中在哪些目录/语言、哪些文件是大头。"
@@ -53,16 +55,16 @@ tokui --diff                  # 同上，裸 --diff 等价于 --diff HEAD（同 
 ### 场景 B：版本间统计对比（Compare 模式）
 
 ```bash
-tokui --compare v1.0..v2.0    # 两个 tag 的统计净变化
-tokui --compare main..HEAD
+tokui compare v1.0..v2.0    # 两个 tag 的统计净变化
+tokui compare main..HEAD
 ```
 
 对 S1（`git archive` 到临时目录）和 S2 各跑一次 Provider，展示每个文件/目录/语言的 ΔCode / ΔComplexity。回答："这个区间让代码量/复杂度净增了多少。"
 
-### 场景 C：历史版本单快照浏览（`--ref`）
+### 场景 C：历史版本单快照浏览（`tokui ref`）
 
 ```bash
-tokui --ref v1.0               # 查看某个 tag/commit 的完整代码构成
+tokui ref v1.0               # 查看某个 tag/commit 的完整代码构成
 ```
 
 形态与全量模式完全一致，只是数据源是 `git archive <ref>` 解包到临时目录的快照。它是 Compare 模式的简化形态（只看一侧），实现几乎零成本（复用 `gitx.Archive` + 现有 `BuildFromProvider`）。
@@ -75,7 +77,7 @@ Diff / Compare 模式下，预览（`Enter`）默认显示 S2 内容；按 `v` �
 
 ### 场景 E：非 git 环境降级
 
-- 目标路径不是 git 仓库：报明确错误 `not a git repository: <path>`，提示去掉 `--diff/--compare` 使用全量模式。
+- 目标路径不是 git 仓库：报明确错误 `not a git repository: <path>`，提示不带子命令使用全量模式。
 - `git` 二进制不在 PATH：报明确错误并附安装提示（复用现有 provider 缺失时的错误处理模式，见 `cmd/app.go:196`）。
 
 ### 明确不做的场景
@@ -185,8 +187,9 @@ type FileChange struct {
     Kind    ChangeKind
 }
 
-// Numstat 解析 git diff --numstat -M 的输出。
-func Numstat(repoRoot, rangeSpec string) ([]FileChange, error)
+// Numstat 解析 git diff --numstat -z -M [--cached] [rev] -- 的输出。
+// rev 为空且 cached=false 时是裸 git diff（未暂存）；cached=true 时是 git diff --cached。
+func Numstat(repoRoot, rev string, cached bool) ([]FileChange, error)
 
 // RepoRoot 返回 path 所属仓库根目录；非 git 仓库返回错误。
 func RepoRoot(path string) (string, error)
@@ -194,8 +197,11 @@ func RepoRoot(path string) (string, error)
 // Archive 将 ref 的工作树解包到临时目录，返回目录路径与清理函数。
 func Archive(ref string) (dir string, cleanup func(), err error)
 
-// ShowFile 返回 ref:path 的文件内容（用于 S1 版本与已删除文件预览）。
+// ShowFile 返回 ref:path 的文件内容（用于 S1 版本与已删除文件预览）；空 ref 读 index 中的已暂存 blob。
 func ShowFile(repoRoot, ref, path string) ([]byte, error)
+
+// ShowRange 将单个 commit 展开为 "commit^..commit"（root commit 以空树为 S1）。
+func ShowRange(repoRoot, commit string) (rangeSpec, s1Ref, s2Ref string, err error)
 ```
 
 边界处理：
@@ -254,34 +260,41 @@ Compare 模式流程：
 
 ### 4.4 CLI 入口
 
-`cmd/app.go` 新增三个互斥标志：
+git 模式落地为 git 风格子命令（`cmd/app.go`），根命令的 `--root/--tree/--treemap/--provider` 持久标志由各子命令继承；每个子命令还可带一个可选的尾部目录参数（覆盖 `--root`）：
 
-```go
-appCmd.Flags().String("diff", "", `Show churn for a git range, e.g. "main...HEAD" or "HEAD~3".`)
-appCmd.Flags().String("compare", "", `Compare statistics between two git refs, e.g. "v1.0..v2.0".`)
-appCmd.Flags().String("ref", "", `Show statistics for a single git ref snapshot, e.g. "v1.0".`)
-appCmd.MarkFlagsMutuallyExclusive("diff", "compare", "ref")
+```
+tokui diff [range] [directory]        # 裸 diff = 工作区未暂存改动（同 git diff，S1 为 index）
+tokui diff --staged [rev] [directory] # 已暂存改动（同 git diff --cached [rev|HEAD]）
+tokui show [commit] [directory]       # 单个 commit 的 churn（默认 HEAD，同 git show）
+tokui compare <a..b> [directory]      # 两个 ref 的统计净变化（range 必填）
+tokui ref <ref> [directory]           # 单快照浏览（ref 必填）
 ```
 
-执行分支（在 pipe 判断之前）：
+`diff` 的三种形态统一收敛为一个内部 `diffSpec`（numstat rev、cached 标志、S1/S2 的 ref 与标签、worktree 标志、range 标签），由同一个 `runDiffMode` 消费：
+
+- **裸 `diff`**：numstat 不带 rev（`git diff`，仅未暂存改动）；S1 是 index，预览走 `git show :<path>`（`gitx.ShowFile` 的空 ref 形式）；S2 分析工作区。
+- **`diff --staged [rev]`**：numstat 带 `--cached`（默认对 HEAD）；S2 真身是 index，没有文件系统形态，**分析时用工作区近似**（既定行为）；S1 预览 ref 为 rev（默认 HEAD）。
+- **`diff <range>`**：单 rev 对该 rev 与工作区做 diff；`a..b` / `a...b` 对两个 ref 做 diff（`...` 的 S1 预览 base 解析为 merge-base）。
+- **`show [commit]`**：展开为 `commit^..commit`（merge commit 取第一父）；root commit 无父，以空树 hash `4b825dc…` 作为 S1，全部文件记为新增（`gitx.ShowRange`）。
+
+执行分支（各子命令 RunE → 共享的 `runGitMode` → 模式 builder）：
 
 ```go
-switch {
-case diffRange != "":
-    err = runDiffMode(tree, p, root, diffRange)
-case compareRange != "":
-    err = runCompareMode(tree, p, root, compareRange)
-case refName != "":
-    err = runRefMode(tree, p, root, refName) // gitx.Archive(ref) + 现有 BuildFromProvider
-case isPipe:
-    // 现有逻辑
-default:
-    // 现有逻辑
+switch subcommand {
+case "diff":
+    err = runDiffMode(tree, p, path, newDiffSpec(rangeArg, staged))
+case "show":
+    err = runShowMode(tree, p, path, commit) // gitx.ShowRange + runDiffMode
+case "compare":
+    err = runCompareMode(tree, p, path, rangeArg)
+case "ref":
+    err = runRefMode(tree, p, path, ref) // gitx.Archive(ref) + 现有 BuildFromProvider
 }
 ```
 
-- `--diff/--compare/--ref` 与 pipe 模式互斥（stdin 非 tty 且带这三个标志时报错提示）。
+- 子命令与 pipe 模式互斥（stdin 非 tty 时报错提示）。
 - range 语法直接透传给 `git diff`（支持 `..`、`...`、单个 commit、`HEAD`），不在 CLI 层做语法校验，git 报错原样透传并附示例。
+- `git diff` 调用在 rev 后固定带 `--`，防止误拼的 rev 与目录同名时静默退化为 pathspec diff。
 - 视图层需要知道当前模式与 range 字符串（状态栏展示），`initViewModel` 增加一个 `ModeInfo` 参数：
 
 ```go
@@ -324,13 +337,13 @@ S2 结果中没有已删除文件，无法从 Provider 拿语言。实现一个�
 
 1. 新增 `gitx` 包：`RepoRoot` / `Numstat`（含 rename、二进制解析）+ 单元测试（用临时 git 仓库做 fixture）。
 2. `structure.Change` 与 `AggregateStats` 聚合扩展；`BuildFromDiff` 实现。
-3. CLI 增加 `--diff`，串通 Diff 模式全链路（含非 git 目录降级错误）。
+3. CLI 增加 `diff` 子命令，串通 Diff 模式全链路（含非 git 目录降级错误）。
 4. 渲染层：`CapChurn` 能力位、Diff 列定义、三个新 SortKey、状态栏汇总行。
 5. `a` 键全量/仅变更切换。
 6. 已删除文件的扩展名语言映射。
 7. 文件级历史预览：`gitx.ShowFile` + 预览层 `v` 键切换 S1/S2 版本（含已删除文件直接预览 S1）。
-8. `gitx.Archive` + `--ref` 单快照模式（复用现有 `BuildFromProvider`，最小落地）。
-9. `BuildFromCompare` + `--compare` + Compare 列定义（`CapDelta`）。
+8. `gitx.Archive` + `ref` 子命令单快照模式（复用现有 `BuildFromProvider`，最小落地）。
+9. `BuildFromCompare` + `compare` 子命令 + Compare 列定义（`CapDelta`）。
 10. 补充测试：
    - numstat 解析（rename、二进制、空 diff、submodule）。
    - `BuildFromDiff` / `BuildFromCompare` 树结构与聚合值。
@@ -338,7 +351,7 @@ S2 结果中没有已删除文件，无法从 Provider 拿语言。实现一个�
    - 动态列在四种模式 × 不同终端宽度下的渲染。
    - `ShowFile` 预览切换（修改/删除/新增文件）。
    - 非 git 目录、git 缺失、非法 range/ref 的错误提示。
-   - `--diff/--compare/--ref` 与 pipe、`--tree/--treemap` 的组合行为。
+   - `diff`/`show`/`compare`/`ref` 子命令与 pipe、`--tree/--treemap` 的组合行为。
 
 阶段划分：步骤 1–7 为第一阶段（Diff 模式 + 历史预览），步骤 8–9 为第二阶段（快照浏览与对比），可独立发布。
 
@@ -353,7 +366,7 @@ S2 结果中没有已删除文件，无法从 Provider 拿语言。实现一个�
 | **S2 是历史 ref 时工作区不可用** | Diff 模式统一走 `gitx.Archive(S2)` 解包临时目录再分析，保证可预览；range 为 `HEAD`（含工作区改动）时直接分析工作区。 |
 | **临时目录清理** | `Archive` 返回 cleanup 函数，`cmd` 层 defer 调用；程序退出前清理。SIGKILL 时 defer 覆盖不到，临时目录会残留（固有局限，由系统临时目录的定期清理兜底）。 |
 | **大仓库双跑成本** | Compare 模式为显式开关；Diff 模式只分析 S2 一侧，成本与现有全量一致。 |
-| **Compare 模式 S2=HEAD 的语义** | `--compare v1..HEAD` 的 S2 分析的是工作区（含未提交改动），这是 §4.3 的既定行为；状态栏将 range 显示为 `v1..HEAD (worktree)` 以明确标注。 |
+| **Compare 模式 S2=HEAD 的语义** | `tokui compare v1..HEAD` 的 S2 分析的是工作区（含未提交改动），这是 §4.3 的既定行为；状态栏将 range 显示为 `v1..HEAD (worktree)` 以明确标注。 |
 | **rename 路径归属** | `-M` 检测后按新路径归属，churn 记在该路径；Compare 按路径 join 时 rename 会表现为 删+增，可接受，不特殊处理。 |
 | **已删除文件无语言/无 S2 统计** | 扩展名映射归语言；统计置零、Kind=Deleted，预览走 `git show`。 |
 
@@ -361,4 +374,4 @@ S2 结果中没有已删除文件，无法从 Provider 拿语言。实现一个�
 
 ## 8. 结论
 
-git 集成的正确形态是 **gitx（变更集/快照来源）+ 现有 Provider（统计）+ Tree 层 join**，而不是第三个 Provider。git 三个命令各司其职：`git diff --numstat` 产出变更集（Diff 模式），`git archive` 产出整树快照（`--ref` 与 Compare 模式），`git show` 按需取单文件历史内容（预览 `v` 键切换）。第一阶段 Diff 模式（`--diff`）覆盖 code review 这个最高频场景，展示上以 S2 为主体、churn 三列做增量；第二阶段补快照浏览（`--ref`）与净变化对比（`--compare`）。各模式共享同一棵树与同一套交互，渲染层通过既有 Capability 机制动态出列，侵入可控。
+git 集成的正确形态是 **gitx（变更集/快照来源）+ 现有 Provider（统计）+ Tree 层 join**，而不是第三个 Provider。git 三个命令各司其职：`git diff --numstat` 产出变更集（Diff 模式），`git archive` 产出整树快照（`ref` 与 Compare 模式），`git show` 按需取单文件历史内容（预览 `v` 键切换）。第一阶段 Diff 模式（`tokui diff`）覆盖 code review 这个最高频场景，展示上以 S2 为主体、churn 三列做增量；第二阶段补快照浏览（`tokui ref`）与净变化对比（`tokui compare`）。各模式共享同一棵树与同一套交互，渲染层通过既有 Capability 机制动态出列，侵入可控。

@@ -56,24 +56,41 @@ func rejectOption(what, value string) error {
 	return nil
 }
 
-// Numstat returns the per-file churn of a diff range by running
-// "git diff --numstat -z -M <rangeSpec>" joined with "--name-status -z -M"
-// for accurate change kinds and "--raw -z -M" to identify submodule
-// (gitlink) entries. An empty range yields an empty slice. Binary files are
-// kept with zero Added/Deleted counts; submodule entries are skipped.
-func Numstat(repoRoot, rangeSpec string) ([]FileChange, error) {
-	if err := rejectOption("diff range", rangeSpec); err != nil {
+// Numstat returns the per-file churn of a diff by running
+// "git diff --numstat -z -M [--cached] [rev] --" joined with
+// "--name-status -z -M" for accurate change kinds and "--raw -z -M" to
+// identify submodule (gitlink) entries. An empty rev with cached=false diffs
+// the worktree against the index (unstaged changes, like plain "git diff");
+// an empty rev with cached=true diffs the index against HEAD (like
+// "git diff --cached"). A rev that yields no differences produces an empty
+// slice. Binary files are kept with zero Added/Deleted counts; submodule
+// entries are skipped.
+func Numstat(repoRoot, rev string, cached bool) ([]FileChange, error) {
+	if err := rejectOption("diff range", rev); err != nil {
 		return nil, err
 	}
-	numstatOut, err := gitOutput(repoRoot, "diff", "--numstat", "-z", "-M", rangeSpec)
+	// The trailing "--" after the rev forces revision interpretation: a
+	// mistyped rev that matches a directory name must fail loudly instead of
+	// silently degrading to a pathspec diff.
+	diffArgs := func(outputFlag string) []string {
+		args := []string{"diff", outputFlag, "-z", "-M"}
+		if cached {
+			args = append(args, "--cached")
+		}
+		if rev != "" {
+			args = append(args, rev)
+		}
+		return append(args, "--")
+	}
+	numstatOut, err := gitOutput(repoRoot, diffArgs("--numstat")...)
 	if err != nil {
 		return nil, err
 	}
-	statusOut, err := gitOutput(repoRoot, "diff", "--name-status", "-z", "-M", rangeSpec)
+	statusOut, err := gitOutput(repoRoot, diffArgs("--name-status")...)
 	if err != nil {
 		return nil, err
 	}
-	rawOut, err := gitOutput(repoRoot, "diff", "--raw", "-z", "-M", rangeSpec)
+	rawOut, err := gitOutput(repoRoot, diffArgs("--raw")...)
 	if err != nil {
 		return nil, err
 	}
@@ -130,6 +147,30 @@ func MergeBase(repoRoot, a, b string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
+// emptyTree is the well-known hash of git's empty tree object. It plays the
+// parent role for root commits so their churn can be expressed as a range.
+const emptyTree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
+// ShowRange expands a single commit into the diff range "commit^..commit" —
+// the churn "git show <commit>" reports (for merge commits, against the
+// first parent). It returns the range along with the S1 (base) and S2
+// (target) preview refs. A root commit has no parent: the empty tree takes
+// the S1 role instead, so every file in the commit comes out as added.
+func ShowRange(repoRoot, commit string) (rangeSpec, s1Ref, s2Ref string, err error) {
+	if err := rejectOption("commit", commit); err != nil {
+		return "", "", "", err
+	}
+	if _, err := gitOutput(repoRoot, "rev-parse", "--verify", "-q", commit+"^{commit}"); err != nil {
+		return "", "", "", fmt.Errorf("unknown commit %q", commit)
+	}
+	parent := commit + "^"
+	if _, err := gitOutput(repoRoot, "rev-parse", "--verify", "-q", parent); err != nil {
+		// No parent: a root commit, diffed against the empty tree.
+		return emptyTree + ".." + commit, emptyTree, commit, nil
+	}
+	return parent + ".." + commit, parent, commit, nil
+}
+
 // Archive extracts the working tree of ref into a temporary directory and
 // returns the directory path along with a cleanup function that removes it.
 // The ref is resolved in the repository at the current working directory.
@@ -172,8 +213,9 @@ func Archive(ref string) (dir string, cleanup func(), err error) {
 }
 
 // ShowFile returns the contents of path at the given ref ("git show
-// ref:path"), used for S1-side and deleted-file previews. Contents larger
-// than 10 MB are rejected with an error wrapping ErrFileTooLarge.
+// ref:path"), used for S1-side and deleted-file previews. An empty ref reads
+// the staged blob from the index ("git show :path"). Contents larger than
+// 10 MB are rejected with an error wrapping ErrFileTooLarge.
 func ShowFile(repoRoot, ref, path string) ([]byte, error) {
 	if err := rejectOption("ref", ref); err != nil {
 		return nil, err

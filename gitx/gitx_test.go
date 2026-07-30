@@ -74,7 +74,7 @@ func TestNumstatModified(t *testing.T) {
 	writeFile(t, repo, "main.go", []byte("a\nX\nc\nd\n"))
 	commitAll(t, repo, "update")
 
-	changes, err := gitx.Numstat(repo, "HEAD~1..HEAD")
+	changes, err := gitx.Numstat(repo, "HEAD~1..HEAD", false)
 	if err != nil {
 		t.Fatalf("Numstat: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestNumstatAddedAndDeleted(t *testing.T) {
 	}
 	commitAll(t, repo, "add new, remove gone")
 
-	changes, err := gitx.Numstat(repo, "HEAD~1..HEAD")
+	changes, err := gitx.Numstat(repo, "HEAD~1..HEAD", false)
 	if err != nil {
 		t.Fatalf("Numstat: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestNumstatRename(t *testing.T) {
 	git(t, repo, "mv", "sub/before.go", "sub/after.go")
 	commitAll(t, repo, "renames")
 
-	changes, err := gitx.Numstat(repo, "HEAD~1..HEAD")
+	changes, err := gitx.Numstat(repo, "HEAD~1..HEAD", false)
 	if err != nil {
 		t.Fatalf("Numstat: %v", err)
 	}
@@ -187,7 +187,7 @@ func TestNumstatBinary(t *testing.T) {
 	writeFile(t, repo, "blob.bin", []byte{0x00, 0x01, 0x02, 0x00, 0xff, 0x00})
 	commitAll(t, repo, "add binary")
 
-	changes, err := gitx.Numstat(repo, "HEAD~1..HEAD")
+	changes, err := gitx.Numstat(repo, "HEAD~1..HEAD", false)
 	if err != nil {
 		t.Fatalf("Numstat: %v", err)
 	}
@@ -211,7 +211,7 @@ func TestNumstatEmptyDiff(t *testing.T) {
 	writeFile(t, repo, "a.txt", []byte("a\n"))
 	commitAll(t, repo, "initial")
 
-	changes, err := gitx.Numstat(repo, "HEAD..HEAD")
+	changes, err := gitx.Numstat(repo, "HEAD..HEAD", false)
 	if err != nil {
 		t.Fatalf("Numstat: %v", err)
 	}
@@ -334,7 +334,7 @@ func TestNumstatSubmoduleSkipped(t *testing.T) {
 	git(t, repo, "add", "main.go")
 	git(t, repo, "commit", "-m", "add submodule and change main.go")
 
-	changes, err := gitx.Numstat(repo, "HEAD~1..HEAD")
+	changes, err := gitx.Numstat(repo, "HEAD~1..HEAD", false)
 	if err != nil {
 		t.Fatalf("Numstat: %v", err)
 	}
@@ -359,7 +359,7 @@ func TestNumstatDeletedBinary(t *testing.T) {
 	}
 	commitAll(t, repo, "remove binary")
 
-	changes, err := gitx.Numstat(repo, "HEAD~1..HEAD")
+	changes, err := gitx.Numstat(repo, "HEAD~1..HEAD", false)
 	if err != nil {
 		t.Fatalf("Numstat: %v", err)
 	}
@@ -389,7 +389,7 @@ func TestNumstatSpecialFilenames(t *testing.T) {
 	}
 	commitAll(t, repo, "update")
 
-	changes, err := gitx.Numstat(repo, "HEAD~1..HEAD")
+	changes, err := gitx.Numstat(repo, "HEAD~1..HEAD", false)
 	if err != nil {
 		t.Fatalf("Numstat: %v", err)
 	}
@@ -416,7 +416,7 @@ func TestLeadingDashRejected(t *testing.T) {
 	writeFile(t, repo, "file.txt", []byte("v1\n"))
 	commitAll(t, repo, "v1")
 
-	if _, err := gitx.Numstat(repo, "-HEAD"); err == nil {
+	if _, err := gitx.Numstat(repo, "-HEAD", false); err == nil {
 		t.Error("Numstat with leading-dash range: expected error, got nil")
 	}
 	if _, _, err := gitx.Archive("-HEAD"); err == nil {
@@ -500,5 +500,92 @@ func TestArchiveSymlinkEscapeRejected(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "escapes") {
 		t.Errorf("error = %q, want it to contain %q", err, "escapes")
+	}
+}
+
+func TestNumstatUnstagedOnly(t *testing.T) {
+	repo := initRepo(t)
+	writeFile(t, repo, "staged.txt", []byte("a\n"))
+	writeFile(t, repo, "unstaged.txt", []byte("a\n"))
+	commitAll(t, repo, "initial")
+
+	// A staged change and a separate unstaged change.
+	writeFile(t, repo, "staged.txt", []byte("a\nb\n"))
+	git(t, repo, "add", "staged.txt")
+	writeFile(t, repo, "unstaged.txt", []byte("a\nb\nc\n"))
+
+	// Bare diff (no rev, not cached): worktree vs index — unstaged only.
+	changes, err := gitx.Numstat(repo, "", false)
+	if err != nil {
+		t.Fatalf("Numstat: %v", err)
+	}
+	if len(changes) != 1 || changes[0].Path != "unstaged.txt" {
+		t.Fatalf("expected only unstaged.txt, got %+v", changes)
+	}
+	if changes[0].Kind != gitx.Modified || changes[0].Added != 2 || changes[0].Deleted != 0 {
+		t.Errorf("unstaged.txt mismatch: %+v", changes[0])
+	}
+}
+
+func TestNumstatStagedOnly(t *testing.T) {
+	repo := initRepo(t)
+	writeFile(t, repo, "staged.txt", []byte("a\n"))
+	writeFile(t, repo, "unstaged.txt", []byte("a\n"))
+	commitAll(t, repo, "initial")
+
+	writeFile(t, repo, "staged.txt", []byte("a\nb\n"))
+	git(t, repo, "add", "staged.txt")
+	writeFile(t, repo, "unstaged.txt", []byte("a\nb\nc\n"))
+
+	// "git diff --cached": index vs HEAD — staged only.
+	changes, err := gitx.Numstat(repo, "", true)
+	if err != nil {
+		t.Fatalf("Numstat: %v", err)
+	}
+	if len(changes) != 1 || changes[0].Path != "staged.txt" {
+		t.Fatalf("expected only staged.txt, got %+v", changes)
+	}
+	if changes[0].Added != 1 || changes[0].Deleted != 0 {
+		t.Errorf("staged.txt mismatch: %+v", changes[0])
+	}
+
+	// "git diff --cached HEAD~0" (explicit rev) sees the same staged change.
+	changes, err = gitx.Numstat(repo, "HEAD", true)
+	if err != nil {
+		t.Fatalf("Numstat with rev: %v", err)
+	}
+	if len(changes) != 1 || changes[0].Path != "staged.txt" {
+		t.Fatalf("expected only staged.txt with explicit rev, got %+v", changes)
+	}
+}
+
+func TestNumstatRevMatchingDirectoryFails(t *testing.T) {
+	repo := initRepo(t)
+	writeFile(t, repo, "sub/file.txt", []byte("a\n"))
+	commitAll(t, repo, "initial")
+
+	// "sub" names a directory but no revision; the trailing "--" must force
+	// revision interpretation and fail instead of degrading to a pathspec.
+	if _, err := gitx.Numstat(repo, "sub", false); err == nil {
+		t.Fatal("expected error for rev that only matches a directory name")
+	}
+}
+
+func TestShowFileIndex(t *testing.T) {
+	repo := initRepo(t)
+	writeFile(t, repo, "file.txt", []byte("committed\n"))
+	commitAll(t, repo, "initial")
+
+	// Stage a new version, then diverge the worktree from the index.
+	writeFile(t, repo, "file.txt", []byte("staged\n"))
+	git(t, repo, "add", "file.txt")
+	writeFile(t, repo, "file.txt", []byte("worktree\n"))
+
+	data, err := gitx.ShowFile(repo, "", "file.txt")
+	if err != nil {
+		t.Fatalf("ShowFile index: %v", err)
+	}
+	if string(data) != "staged\n" {
+		t.Errorf("ShowFile index = %q, want the staged blob %q", data, "staged\n")
 	}
 }

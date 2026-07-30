@@ -76,11 +76,11 @@
 
 `Name` → `Languages` → `Code` → `Comments` → `Blanks` → `Total` → `Percent` → `Complexity`
 
-Diff 模式（`--diff`）下排序列不同，循环为：
+Diff 模式（`tokui diff`）下排序列不同，循环为：
 
 `Name` → `+` → `-` → `Δ` → `%` → `Code` → `Total`（默认按 `|Δ|` 降序；`%` 为该目录/文件 churn 占当前目录总 churn 的百分比）
 
-Compare 模式（`--compare`）下循环为：
+Compare 模式（`tokui compare`）下循环为：
 
 `Name` → `ΔCode` → `ΔCmplx`（默认按 `|ΔCode|` 降序）
 

@@ -247,3 +247,36 @@ func TestFilePreviewDiffTooLargeShowsFriendlyHint(t *testing.T) {
 		t.Errorf("expected a friendly size hint, got %q", fp.content)
 	}
 }
+
+func TestFilePreviewDiffIndexS1(t *testing.T) {
+	repo := initPreviewRepo(t)
+	// Stage the worktree modification, then diverge the worktree again so the
+	// index holds a distinct "staged" version.
+	git(t, repo, "add", "main.go")
+	if err := os.WriteFile(filepath.Join(repo, "main.go"), []byte("diverged\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	mode := ModeInfo{
+		Kind:     ModeDiff,
+		Range:    "worktree (unstaged)",
+		RepoRoot: repo,
+		S1Label:  "index",
+		S2Label:  "worktree",
+	}
+	fp := NewFilePreviewDiff(filepath.Join(repo, "main.go"), 80, 24, mode, structure.Change{Kind: gitx.Modified})
+
+	if !fp.CanToggleVersion() {
+		t.Fatal("expected version toggle to be available with the index as S1")
+	}
+	fp.ToggleVersion()
+	if fp.errorMsg != "" {
+		t.Fatalf("expected no error for index S1 lookup, got %q", fp.errorMsg)
+	}
+	if fp.content != "new version\n" {
+		t.Errorf("expected the staged blob as S1 content, got %q", fp.content)
+	}
+	if got := fp.versionLabel(); got != "S1: index" {
+		t.Errorf("expected S1 title marker, got %q", got)
+	}
+}

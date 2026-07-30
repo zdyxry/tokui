@@ -155,7 +155,7 @@ func TestRunCompareModeNotARepo(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "not a git repository") {
 		t.Errorf("expected not-a-repo error, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "remove --compare") {
+	if !strings.Contains(err.Error(), "without a subcommand") {
 		t.Errorf("expected full-mode hint, got %v", err)
 	}
 }
@@ -243,7 +243,7 @@ func TestRunDiffMode(t *testing.T) {
 	repo := initCompareRepo(t)
 
 	tree := structure.NewTree(nil)
-	mode, err := runDiffMode(tree, stubProvider{}, repo, "v1..v2")
+	mode, err := runDiffMode(tree, stubProvider{}, repo, newDiffSpec("v1..v2", false))
 	if err != nil {
 		t.Fatalf("runDiffMode: %v", err)
 	}
@@ -285,7 +285,7 @@ func TestRunDiffModeWorktree(t *testing.T) {
 	writeRepoFile(t, repo, "main.go", "a\nb\nc\nd\ne\nf\ng\n")
 
 	tree := structure.NewTree(nil)
-	mode, err := runDiffMode(tree, stubProvider{}, repo, "HEAD")
+	mode, err := runDiffMode(tree, stubProvider{}, repo, newDiffSpec("HEAD", false))
 	if err != nil {
 		t.Fatalf("runDiffMode: %v", err)
 	}
@@ -324,7 +324,7 @@ func TestRunDiffModeThreeDotResolvesMergeBase(t *testing.T) {
 	git(t, repo, "commit", "-m", "main work")
 
 	tree := structure.NewTree(nil)
-	mode, err := runDiffMode(tree, stubProvider{}, repo, "main...feature")
+	mode, err := runDiffMode(tree, stubProvider{}, repo, newDiffSpec("main...feature", false))
 	if err != nil {
 		t.Fatalf("runDiffMode: %v", err)
 	}
@@ -354,7 +354,7 @@ func TestRunDiffModeThreeDotResolvesMergeBase(t *testing.T) {
 }
 
 func TestRunDiffModeNotARepo(t *testing.T) {
-	_, err := runDiffMode(structure.NewTree(nil), stubProvider{}, t.TempDir(), "HEAD")
+	_, err := runDiffMode(structure.NewTree(nil), stubProvider{}, t.TempDir(), newDiffSpec("HEAD", false))
 	if err == nil {
 		t.Fatal("expected not-a-repo error")
 	}
@@ -365,14 +365,14 @@ func TestRunDiffModeNotARepo(t *testing.T) {
 	if !errors.As(err, &cliErr) {
 		t.Errorf("expected CLIError, got %T", err)
 	}
-	if !strings.Contains(err.Error(), "remove --diff") {
+	if !strings.Contains(err.Error(), "without a subcommand") {
 		t.Errorf("expected full-mode hint, got %v", err)
 	}
 }
 
 func TestRunDiffModeInvalidRange(t *testing.T) {
 	repo := initCompareRepo(t)
-	_, err := runDiffMode(structure.NewTree(nil), stubProvider{}, repo, "v1..no-such-ref")
+	_, err := runDiffMode(structure.NewTree(nil), stubProvider{}, repo, newDiffSpec("v1..no-such-ref", false))
 	if err == nil {
 		t.Fatal("expected error for unknown ref in range")
 	}
@@ -380,7 +380,7 @@ func TestRunDiffModeInvalidRange(t *testing.T) {
 	if !errors.As(err, &cliErr) {
 		t.Errorf("expected CLIError, got %T: %v", err, err)
 	}
-	if !strings.Contains(err.Error(), "tokui --diff") {
+	if !strings.Contains(err.Error(), "tokui diff") {
 		t.Errorf("expected usage examples with the git error, got %v", err)
 	}
 }
@@ -389,7 +389,7 @@ func TestRunDiffModeScopedToSubdir(t *testing.T) {
 	repo := initDiffRepo(t)
 
 	tree := structure.NewTree(nil)
-	_, err := runDiffMode(tree, stubProvider{}, filepath.Join(repo, "sub"), "HEAD~1..HEAD")
+	_, err := runDiffMode(tree, stubProvider{}, filepath.Join(repo, "sub"), newDiffSpec("HEAD~1..HEAD", false))
 	if err != nil {
 		t.Fatalf("runDiffMode: %v", err)
 	}
@@ -481,7 +481,7 @@ func TestRunRefModeNotARepo(t *testing.T) {
 	if !errors.As(err, &cliErr) {
 		t.Errorf("expected CLIError, got %T", err)
 	}
-	if !strings.Contains(err.Error(), "remove --ref") {
+	if !strings.Contains(err.Error(), "without a subcommand") {
 		t.Errorf("expected full-mode hint, got %v", err)
 	}
 }
@@ -499,5 +499,168 @@ func TestRunCompareModeWorktreeLabel(t *testing.T) {
 	}
 	if mode.S2Ref != "" || mode.S2Label != "worktree" {
 		t.Errorf("unexpected S2 fields: %+v", mode)
+	}
+}
+
+// initIndexRepo creates a repo with a committed base plus a staged change
+// (staged.go: 1->2 lines) and a separate unstaged change (unstaged.go:
+// 1->3 lines).
+func initIndexRepo(t *testing.T) string {
+	t.Helper()
+	requireGit(t)
+	repo := t.TempDir()
+	git(t, repo, "-c", "init.defaultBranch=main", "init")
+
+	writeRepoFile(t, repo, "staged.go", "a\n")
+	writeRepoFile(t, repo, "unstaged.go", "a\n")
+	git(t, repo, "add", "-A")
+	git(t, repo, "commit", "-m", "base")
+
+	writeRepoFile(t, repo, "staged.go", "a\nb\n")
+	git(t, repo, "add", "staged.go")
+	writeRepoFile(t, repo, "unstaged.go", "a\nb\nc\n")
+	return repo
+}
+
+func TestRunDiffModeBareUnstaged(t *testing.T) {
+	repo := initIndexRepo(t)
+
+	tree := structure.NewTree(nil)
+	mode, err := runDiffMode(tree, stubProvider{}, repo, newDiffSpec("", false))
+	if err != nil {
+		t.Fatalf("runDiffMode: %v", err)
+	}
+
+	if mode.Kind != render.ModeDiff {
+		t.Errorf("expected Diff mode, got %v", mode.Kind)
+	}
+	if mode.Range != "worktree (unstaged)" || mode.S1Label != "index" || mode.S2Label != "worktree" {
+		t.Errorf("unexpected mode info: %+v", mode)
+	}
+	if mode.S1Ref != "" {
+		t.Errorf("bare diff S1 is the index; S1Ref must be empty, got %q", mode.S1Ref)
+	}
+
+	root := tree.Root()
+	// The tree holds the full S2 snapshot; only the unstaged change carries
+	// change information. The staged-only change must not.
+	staged := root.GetChild("staged.go")
+	if staged == nil {
+		t.Fatal("expected staged.go in the S2 snapshot tree")
+	}
+	if staged.Change.Present {
+		t.Errorf("staged.go is not part of the unstaged diff, got %+v", staged.Change)
+	}
+	unstaged := root.GetChild("unstaged.go")
+	if unstaged == nil {
+		t.Fatal("expected unstaged.go in tree")
+	}
+	if unstaged.TotalStats.Code != 3 || unstaged.Change.Added != 2 {
+		t.Errorf("unstaged.go mismatch: stats %+v change %+v", unstaged.TotalStats, unstaged.Change)
+	}
+}
+
+func TestRunDiffModeStaged(t *testing.T) {
+	repo := initIndexRepo(t)
+
+	tree := structure.NewTree(nil)
+	mode, err := runDiffMode(tree, stubProvider{}, repo, newDiffSpec("", true))
+	if err != nil {
+		t.Fatalf("runDiffMode: %v", err)
+	}
+
+	if mode.Range != "--staged" || mode.S1Ref != "HEAD" || mode.S1Label != "HEAD" || mode.S2Label != "worktree" {
+		t.Errorf("unexpected mode info: %+v", mode)
+	}
+
+	root := tree.Root()
+	// The tree holds the full S2 snapshot; only the staged change carries
+	// change information. The unstaged-only change must not.
+	unstaged := root.GetChild("unstaged.go")
+	if unstaged == nil {
+		t.Fatal("expected unstaged.go in the S2 snapshot tree")
+	}
+	if unstaged.Change.Present {
+		t.Errorf("unstaged.go is not part of the staged diff, got %+v", unstaged.Change)
+	}
+	staged := root.GetChild("staged.go")
+	if staged == nil {
+		t.Fatal("expected staged.go in tree")
+	}
+	// The S2 approximation is the worktree, so the current file size shows.
+	if staged.TotalStats.Code != 2 || staged.Change.Added != 1 {
+		t.Errorf("staged.go mismatch: stats %+v change %+v", staged.TotalStats, staged.Change)
+	}
+}
+
+func TestRunShowMode(t *testing.T) {
+	repo := initCompareRepo(t)
+
+	tree := structure.NewTree(nil)
+	mode, err := runShowMode(tree, stubProvider{}, repo, "HEAD")
+	if err != nil {
+		t.Fatalf("runShowMode: %v", err)
+	}
+
+	if mode.Kind != render.ModeDiff {
+		t.Errorf("expected Diff mode, got %v", mode.Kind)
+	}
+	if mode.Range != "HEAD" || mode.S1Ref != "HEAD^" || mode.S2Ref != "HEAD" {
+		t.Errorf("unexpected mode info: %+v", mode)
+	}
+
+	// The churn of the v2 commit: main.go grew, new.go was added, gone.go was
+	// deleted — the same change set as v1..v2, but S2 is the archived commit.
+	root := tree.Root()
+	mainGo := root.GetChild("main.go")
+	if mainGo == nil {
+		t.Fatal("expected main.go in tree")
+	}
+	if mainGo.TotalStats.Code != 5 || mainGo.Change.Added != 3 {
+		t.Errorf("main.go mismatch: stats %+v change %+v", mainGo.TotalStats, mainGo.Change)
+	}
+	if root.GetChild("gone.go") == nil {
+		t.Error("expected deleted gone.go in tree")
+	}
+}
+
+func TestRunShowModeRootCommit(t *testing.T) {
+	requireGit(t)
+	repo := t.TempDir()
+	git(t, repo, "-c", "init.defaultBranch=main", "init")
+	writeRepoFile(t, repo, "only.go", "a\nb\n")
+	git(t, repo, "add", "-A")
+	git(t, repo, "commit", "-m", "root")
+
+	tree := structure.NewTree(nil)
+	mode, err := runShowMode(tree, stubProvider{}, repo, "HEAD")
+	if err != nil {
+		t.Fatalf("runShowMode: %v", err)
+	}
+
+	const emptyTree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+	if mode.S1Ref != emptyTree || mode.S2Ref != "HEAD" {
+		t.Errorf("unexpected mode info: %+v", mode)
+	}
+
+	// Every file of a root commit comes out as added.
+	only := tree.Root().GetChild("only.go")
+	if only == nil {
+		t.Fatal("expected only.go in tree")
+	}
+	if only.Change.Kind != gitx.Added || only.TotalStats.Code != 2 {
+		t.Errorf("only.go mismatch: stats %+v change %+v", only.TotalStats, only.Change)
+	}
+}
+
+func TestRunShowModeUnknownCommit(t *testing.T) {
+	repo := initCompareRepo(t)
+	_, err := runShowMode(structure.NewTree(nil), stubProvider{}, repo, "no-such-commit")
+	if err == nil {
+		t.Fatal("expected error for unknown commit")
+	}
+	var cliErr *CLIError
+	if !errors.As(err, &cliErr) {
+		t.Errorf("expected CLIError, got %T: %v", err, err)
 	}
 }

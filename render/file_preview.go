@@ -102,10 +102,12 @@ func newFilePreview(filePath string, width, height int, mode ModeInfo, change st
 }
 
 // CanToggleVersion reports whether the preview can switch between the S1 and
-// S2 versions of the file (Diff mode with an S1 ref and an available S2
-// version).
+// S2 versions of the file (Diff mode with an S1 side and an available S2
+// version). The check keys on the S1 label rather than the S1 ref because a
+// bare "tokui diff" has the index as S1, which is addressed with an empty
+// ref ("git show :path").
 func (fp *FilePreview) CanToggleVersion() bool {
-	return fp.s1Ref != "" && !fp.s2Missing
+	return fp.s1Label != "" && !fp.s2Missing
 }
 
 // ToggleVersion switches between the S2 and S1 versions of the file,
@@ -122,7 +124,7 @@ func (fp *FilePreview) ToggleVersion() {
 // loadFileContent reads the file content and sets it in the viewport
 func (fp *FilePreview) loadFileContent() {
 	content, err := fp.loadCurrentVersion()
-	if err != nil && fp.s1Ref != "" && !fp.showingS1 && fp.kind == gitx.Deleted {
+	if err != nil && fp.s1Label != "" && !fp.showingS1 && fp.kind == gitx.Deleted {
 		// A deleted file has no S2 version: fall back to the S1 version
 		// directly. Other S2 read failures surface as errors instead of being
 		// misread as a deletion.
@@ -333,9 +335,10 @@ func (fp *FilePreview) View() string {
 }
 
 // versionLabel returns the S1/S2 marker shown in the preview title bar, or an
-// empty string outside Diff mode.
+// empty string outside Diff mode. Like CanToggleVersion it keys on the S1
+// label: a bare "tokui diff" has the index as S1 with an empty S1 ref.
 func (fp *FilePreview) versionLabel() string {
-	if fp.s1Ref == "" {
+	if fp.s1Label == "" {
 		return ""
 	}
 	if fp.showingS1 {
