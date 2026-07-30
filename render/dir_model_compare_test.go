@@ -115,7 +115,7 @@ func TestCompareModeRowValues(t *testing.T) {
 	if legacy == nil {
 		t.Fatalf("expected a row for legacy.rb, got %v", rowNames(dm))
 	}
-	if legacy[2] != "legacy.rb (已删除)" {
+	if legacy[2] != "legacy.rb (deleted)" {
 		t.Errorf("expected deleted marker in name cell, got %q", legacy[2])
 	}
 	if legacy[3] != "700 → 0" || legacy[4] != "-700" || legacy[5] != "-12" {

@@ -155,7 +155,7 @@ func (fp *FilePreview) loadCurrentVersion() (string, error) {
 			if label == "" {
 				label = fp.s1Ref
 			}
-			return fmt.Sprintf("S1 (%s) 无此文件（新增）", label), nil
+			return fmt.Sprintf("Not present in S1 (%s) — file was added", label), nil
 		}
 		path := fp.relPath
 		if fp.kind == gitx.Renamed && fp.oldPath != "" {

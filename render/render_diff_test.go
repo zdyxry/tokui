@@ -170,7 +170,7 @@ func TestLevelDownCompareDeletedFilePreviewsS1(t *testing.T) {
 		t.Fatalf("setup: expected navigation into old, at %q", got)
 	}
 	cursorOnEntry(t, dm, "legacy.rb")
-	if got := dm.dirsTable.SelectedRow()[2]; !strings.Contains(got, "(已删除)") {
+	if got := dm.dirsTable.SelectedRow()[2]; !strings.Contains(got, "(deleted)") {
 		t.Fatalf("setup: expected the deleted marker in the name cell, got %q", got)
 	}
 

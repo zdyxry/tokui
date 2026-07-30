@@ -199,7 +199,7 @@ func TestFilePreviewDiffAddedFileShowsHintForS1(t *testing.T) {
 	if fp.errorMsg != "" {
 		t.Fatalf("added file must not surface a git error, got %q", fp.errorMsg)
 	}
-	if !strings.Contains(fp.content, "无此文件（新增）") || !strings.Contains(fp.content, "HEAD") {
+	if !strings.Contains(fp.content, "Not present in S1") || !strings.Contains(fp.content, "HEAD") {
 		t.Errorf("expected a friendly added-file hint, got %q", fp.content)
 	}
 }

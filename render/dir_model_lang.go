@@ -52,7 +52,7 @@ func (dm *DirModel) formatTreeName(entry *structure.Entry, depth int) string {
 func (dm *DirModel) displayName(e *structure.Entry) string {
 	name := e.Name()
 	if dm.modeInfo.Compare() && e.Change.Kind == gitx.Deleted {
-		name += " (已删除)"
+		name += " (deleted)"
 	}
 	return name
 }
