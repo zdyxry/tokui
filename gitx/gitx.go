@@ -182,7 +182,7 @@ func Archive(ref string) (dir string, cleanup func(), err error) {
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to create temporary directory: %w", err)
 	}
-	cleanup = func() { os.RemoveAll(dir) }
+	cleanup = func() { _ = os.RemoveAll(dir) }
 
 	cmd := exec.Command("git", "archive", ref)
 	stdout, err := cmd.StdoutPipe()
@@ -200,8 +200,8 @@ func Archive(ref string) (dir string, cleanup func(), err error) {
 	if extractErr != nil {
 		// Do not leave git blocked writing to a pipe nobody reads: kill the
 		// process and reap it before returning.
-		cmd.Process.Kill()
-		cmd.Wait()
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
 		cleanup()
 		return "", nil, fmt.Errorf("failed to extract git archive of %s: %w", ref, extractErr)
 	}
@@ -401,7 +401,7 @@ func extractTar(r io.Reader, dest string) error {
 				return err
 			}
 			if _, err := io.Copy(f, tr); err != nil {
-				f.Close()
+				_ = f.Close()
 				return err
 			}
 			if err := f.Close(); err != nil {

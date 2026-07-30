@@ -21,7 +21,7 @@ func useDevNullStdin(t *testing.T) {
 	os.Stdin = devNull
 	t.Cleanup(func() {
 		os.Stdin = oldStdin
-		devNull.Close()
+		_ = devNull.Close()
 	})
 }
 
@@ -36,8 +36,8 @@ func usePipeStdin(t *testing.T) {
 	os.Stdin = r
 	t.Cleanup(func() {
 		os.Stdin = oldStdin
-		r.Close()
-		w.Close()
+		_ = r.Close()
+		_ = w.Close()
 	})
 }
 
