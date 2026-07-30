@@ -24,7 +24,8 @@ Screenshots below show `tokui` analyzing the [Prometheus](https://github.com/pro
 - **Interactive Terminal UI**: Navigate, filter, and explore your project with an intuitive keyboard-driven interface.
 - **Multiple Stats Providers**: Use `tokei` (default) for line counts, or switch to `scc` for complexity metrics.
 - **Deep Tokei Integration**: Leverages `tokei` for accurate lines of code, comments, blanks, and total lines, categorized by language.
-- **File Preview**: Press `Enter` on any file to instantly preview its contents in a scrollable overlay window.
+- **Git Integration**: Analyze code churn with `tokui diff`, browse historical snapshots with `tokui ref`, or compare statistics between two refs with `tokui compare`. File previews show side-by-side diffs in git modes.
+- **File Preview**: Press `Enter` on any file to instantly preview its contents in a scrollable overlay window. In git modes, previews show the file's diff with syntax-colored additions and deletions.
 - **Language Filtering**: Filter by a single language (`Tab`), or select multiple languages via the multi-select overlay (`Ctrl+L`).
 - **Visual Charts**: Toggle a language distribution pie chart with `Ctrl+w`.
 - **Column Sorting**: Sort the directory listing by any column (`s`) and toggle ascending/descending order (`S`).
@@ -41,6 +42,8 @@ Screenshots below show `tokui` analyzing the [Prometheus](https://github.com/pro
 If you are building from source or want to use your own `tokei` installation, ensure `tokei` is available in your `PATH`. Tokui will automatically prefer the system-installed version if present.
 
 - **Install `tokei`** (optional): [https://github.com/XAMPPRocky/tokei#installation](https://github.com/XAMPPRocky/tokei#installation)
+
+> **Git modes** (`diff`, `show`, `compare`, `ref`) require `git` to be installed and available in your `PATH`, and must be run inside a git repository.
 
 ## 📦 Installation
 
@@ -112,11 +115,47 @@ tokei -o json --exclude node_modules . | tokui
 scc --by-file -f json . | tokui
 ```
 
+### 3. Git Modes
+
+Run any of the git subcommands inside a git repository to analyze changes, compare snapshots, or browse historical versions.
+
+```bash
+# Diff mode: code churn for a commit range, branch, or unstaged changes
+tokui diff                    # unstaged changes (like "git diff")
+tokui diff --staged           # staged changes (like "git diff --cached")
+tokui diff main...HEAD        # churn of your branch vs main
+tokui diff HEAD~3             # churn of the last 3 commits
+
+# Show mode: churn of a single commit (like "git show")
+tokui show HEAD               # churn of the latest commit
+tokui show a1b2c3d            # churn of a specific commit
+
+# Compare mode: net statistics change between two refs
+tokui compare v1.0..v2.0      # ΔCode, ΔComplexity between two tags
+tokui compare main..HEAD      # net change on your branch
+
+# Ref mode: browse a historical snapshot (like the normal full view)
+tokui ref v1.0                # full code statistics of a tag
+
+# Scope to a subdirectory
+tokui diff main...HEAD src/   # only changes under src/
+```
+
+In **Diff mode**, the table shows code churn columns (`+`/`-`/`Δ`/`%`) alongside the current (S2) code statistics. Press `a` to toggle between "changed files only" and the full snapshot (unchanged files appear dimmed). Press `Enter` on a file to see its diff with side-by-side or unified layout.
+
+In **Compare mode**, the table shows `Code (S1 → S2)`, `ΔCode`, and `ΔCmplx` columns, giving you the net growth or shrinkage between two refs.
+
+These modes cannot be combined with pipe mode.
+
 ### CLI Arguments
 
 ```
 Usage:
   tokui [directory] [flags]
+  tokui diff [range] [directory] [flags]
+  tokui show [commit] [directory] [flags]
+  tokui compare <a..b> [directory] [flags]
+  tokui ref <ref> [directory] [flags]
 
 Flags:
   -r, --root string    Specify the root directory to analyze. Defaults to the current directory ".".
@@ -124,6 +163,9 @@ Flags:
   -t, --tree           Start in tree mode. Directories are expandable inline instead of navigable.
       --treemap        Start in treemap mode. Show proportional blocks instead of a table.
   -h, --help           Show help information
+
+Diff flags:
+      --staged         Show staged changes against HEAD (like "git diff --cached").
 ```
 
 ## ⌨️ Keybindings
@@ -147,6 +189,7 @@ Flags:
 | `Ctrl`+`P`          | Open global fuzzy search (press `Enter` to jump, `Esc` to close)    |
 | `s`                 | Cycle sort column (Name → Languages → Code → Comments → Blanks → Total → % of Parent) |
 | `S`                 | Toggle ascending / descending order for the current sort column     |
+| `a`                 | (Diff/Compare modes) Toggle changed-only / all files                |
 | `Ctrl`+`w`          | Show/hide language distribution pie chart                           |
 | `?`                 | Show/hide full help                                                 |
 | `q` / `Ctrl`+`c`    | Quit the application / Close file preview                           |
