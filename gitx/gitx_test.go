@@ -27,6 +27,9 @@ func initRepo(t *testing.T) string {
 	requireGit(t)
 	dir := t.TempDir()
 	git(t, dir, "-c", "init.defaultBranch=main", "init")
+	// CI runners may set core.autocrlf=true globally, which makes git
+	// archive export CRLF line endings; pin it off for deterministic blobs.
+	git(t, dir, "config", "core.autocrlf", "false")
 	return dir
 }
 
