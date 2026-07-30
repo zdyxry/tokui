@@ -41,7 +41,7 @@
 |----------|------|
 | `INPUT` | 关闭过滤框，然后对当前选中项执行进入/展开/预览。 |
 | `SEARCH` | 跳转到选中的搜索结果并关闭搜索弹窗。 |
-| `READY` / `TREE` / `TREEMAP` | 选中 `..` → 返回上级；Tree 模式 → 展开/折叠目录；Treemap → 钻取；否则 → 进入目录或预览文件。 |
+| `READY` / `TREE` / `TREEMAP` | 选中 `..` → 返回上级；Tree 模式 → 目录展开/折叠、文件预览；Treemap → 钻取；否则 → 进入目录或预览文件。 |
 
 ---
 
@@ -153,8 +153,8 @@ Compare 模式（`tokui compare`）下循环为：
 | `↑` / `↓` / `j` / `k` | 向上/向下滚动一行。 |
 | `pgup` / `pgdown` | 向上/向下滚动一页。 |
 | `home` / `end` | 跳到文件顶部/底部。 |
-| `v` | （Diff/Compare 模式）在文件的 S2 版本与 S1 版本之间切换，标题栏显示当前版本标记（如 `S1: main` / `S2: worktree`）。已删除文件无 S2 版本，直接预览 S1 版本且不可切换。 |
 
+> Diff/Compare 模式下预览直接显示该文件的 diff：宽度足够时为左右两列并排（左 S1 右 S2，删除行红底、新增行绿底、带行号），宽度不足时降级为单列 unified diff（新增绿、删除红）；标题栏显示 diff range。其他模式显示文件全文。
 > 预览底部提示显示 `q/Esc` 关闭，方向键/`PgUp`/`PgDn`/`Home`/`End` 导航。
 
 ---
@@ -190,7 +190,7 @@ READY / TREE / TREEMAP
 ├── 搜索: Ctrl+P
 ├── 图表: Ctrl+W
 ├── 排序: s (换列), S (换方向)
-├── Diff/Compare 模式: a (仅变更/全量), v (预览切换 S1/S2)
+├── Diff/Compare 模式: a (仅变更/全量), 预览显示文件 diff
 ├── 编辑: e
 ├── 帮助: ?
 └── 退出: q, Ctrl+C
@@ -218,8 +218,8 @@ SELECT_LANG (Ctrl+L)
 PREVIEW
 ├── q/Esc: 关闭
 ├── ↑/↓/j/k/pgup/pgdown: 滚动
-├── home/end: 跳到文件首尾
-└── v: 切换 S1/S2 版本（Diff/Compare 模式）
+└── home/end: 跳到文件首尾
+    （Diff/Compare 模式下预览内容为该文件的 diff）
 ```
 
 ---

@@ -45,7 +45,6 @@ const (
 	cycleSortColumn    bindingKey = "s"
 	toggleSortOrder    bindingKey = "S"
 	toggleChanged      bindingKey = "a"
-	previewVersion     bindingKey = "v"
 )
 
 var toggleHelpBinding = key.NewBinding(
@@ -215,13 +214,6 @@ var diffKeyMap = []key.Binding{
 		key.WithHelp(
 			bindKeyStyle.Render(toggleChanged.String()),
 			helpDescStyle.Render(" - Toggle changed-only / all files"),
-		),
-	),
-	key.NewBinding(
-		key.WithKeys(previewVersion.String()),
-		key.WithHelp(
-			bindKeyStyle.Render(previewVersion.String()),
-			helpDescStyle.Render(" - Preview: switch S1/S2 version"),
 		),
 	),
 }

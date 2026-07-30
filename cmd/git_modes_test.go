@@ -109,7 +109,7 @@ func TestRunCompareMode(t *testing.T) {
 	if mode.Kind != render.ModeCompare {
 		t.Errorf("expected Compare mode, got %v", mode.Kind)
 	}
-	if mode.Range != "v1..v2" || mode.S1Ref != "v1" || mode.S2Ref != "v2" {
+	if mode.Range != "v1..v2" || mode.DiffRev != "v1..v2" || mode.DiffCached {
 		t.Errorf("unexpected mode info: %+v", mode)
 	}
 
@@ -204,16 +204,6 @@ func TestRunRefModeBadRef(t *testing.T) {
 	}
 }
 
-// gitRevParse returns the commit sha a ref resolves to in repo.
-func gitRevParse(t *testing.T, repo, ref string) string {
-	t.Helper()
-	out, err := exec.Command("git", "-C", repo, "rev-parse", ref).Output()
-	if err != nil {
-		t.Fatalf("git rev-parse %s: %v", ref, err)
-	}
-	return strings.TrimSpace(string(out))
-}
-
 // initDiffRepo creates a repo where HEAD~1..HEAD touches both a top-level
 // file (top.go, 1->2 lines) and a subdirectory file (sub/inner.go, 1->2
 // lines).
@@ -251,7 +241,7 @@ func TestRunDiffMode(t *testing.T) {
 	if mode.Kind != render.ModeDiff {
 		t.Errorf("expected Diff mode, got %v", mode.Kind)
 	}
-	if mode.Range != "v1..v2" || mode.S1Ref != "v1" || mode.S2Ref != "v2" {
+	if mode.Range != "v1..v2" || mode.DiffRev != "v1..v2" || mode.DiffCached {
 		t.Errorf("unexpected mode info: %+v", mode)
 	}
 	if mode.RepoRoot == "" {
@@ -290,7 +280,7 @@ func TestRunDiffModeWorktree(t *testing.T) {
 		t.Fatalf("runDiffMode: %v", err)
 	}
 
-	if mode.S1Ref != "HEAD" || mode.S2Ref != "" || mode.S2Label != "worktree" {
+	if mode.DiffRev != "HEAD" || mode.DiffCached {
 		t.Errorf("unexpected mode info: %+v", mode)
 	}
 	mainGo := tree.Root().GetChild("main.go")
@@ -303,7 +293,7 @@ func TestRunDiffModeWorktree(t *testing.T) {
 	}
 }
 
-func TestRunDiffModeThreeDotResolvesMergeBase(t *testing.T) {
+func TestRunDiffModeThreeDot(t *testing.T) {
 	requireGit(t)
 	repo := t.TempDir()
 	git(t, repo, "-c", "init.defaultBranch=main", "init")
@@ -329,14 +319,10 @@ func TestRunDiffModeThreeDotResolvesMergeBase(t *testing.T) {
 		t.Fatalf("runDiffMode: %v", err)
 	}
 
-	// The S1 preview base must be the merge-base commit (what git diff
-	// main...feature actually diffs against), not the main ref itself.
-	want := gitRevParse(t, repo, "base")
-	if mode.S1Ref != want {
-		t.Errorf("S1Ref = %q, want merge-base %q", mode.S1Ref, want)
-	}
-	if mode.S1Label != "main" {
-		t.Errorf("S1Label should stay the human-readable ref, got %q", mode.S1Label)
+	// The three-dot range is handed to git as-is: both the numstat diff and
+	// the per-file diff previews let git resolve the merge-base themselves.
+	if mode.DiffRev != "main...feature" {
+		t.Errorf("DiffRev = %q, want %q", mode.DiffRev, "main...feature")
 	}
 
 	// The change set is base..feature: only main.go changed.
@@ -497,8 +483,10 @@ func TestRunCompareModeWorktreeLabel(t *testing.T) {
 	if mode.Range != "v1..HEAD (worktree)" {
 		t.Errorf("expected worktree-annotated range, got %q", mode.Range)
 	}
-	if mode.S2Ref != "" || mode.S2Label != "worktree" {
-		t.Errorf("unexpected S2 fields: %+v", mode)
+	// Diff previews use a single-rev diff: "git diff v1" diffs v1 against
+	// the worktree, matching the compare semantics.
+	if mode.DiffRev != "v1" || mode.DiffCached {
+		t.Errorf("unexpected diff fields: %+v", mode)
 	}
 }
 
@@ -534,11 +522,8 @@ func TestRunDiffModeBareUnstaged(t *testing.T) {
 	if mode.Kind != render.ModeDiff {
 		t.Errorf("expected Diff mode, got %v", mode.Kind)
 	}
-	if mode.Range != "worktree (unstaged)" || mode.S1Label != "index" || mode.S2Label != "worktree" {
+	if mode.Range != "worktree (unstaged)" || mode.DiffRev != "" || mode.DiffCached {
 		t.Errorf("unexpected mode info: %+v", mode)
-	}
-	if mode.S1Ref != "" {
-		t.Errorf("bare diff S1 is the index; S1Ref must be empty, got %q", mode.S1Ref)
 	}
 
 	root := tree.Root()
@@ -569,7 +554,7 @@ func TestRunDiffModeStaged(t *testing.T) {
 		t.Fatalf("runDiffMode: %v", err)
 	}
 
-	if mode.Range != "--staged" || mode.S1Ref != "HEAD" || mode.S1Label != "HEAD" || mode.S2Label != "worktree" {
+	if mode.Range != "--staged" || !mode.DiffCached || mode.DiffRev != "" {
 		t.Errorf("unexpected mode info: %+v", mode)
 	}
 
@@ -605,7 +590,7 @@ func TestRunShowMode(t *testing.T) {
 	if mode.Kind != render.ModeDiff {
 		t.Errorf("expected Diff mode, got %v", mode.Kind)
 	}
-	if mode.Range != "HEAD" || mode.S1Ref != "HEAD^" || mode.S2Ref != "HEAD" {
+	if mode.Range != "HEAD" || mode.DiffRev != "HEAD^..HEAD" || mode.DiffCached {
 		t.Errorf("unexpected mode info: %+v", mode)
 	}
 
@@ -639,7 +624,7 @@ func TestRunShowModeRootCommit(t *testing.T) {
 	}
 
 	const emptyTree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
-	if mode.S1Ref != emptyTree || mode.S2Ref != "HEAD" {
+	if mode.DiffRev != emptyTree+"..HEAD" {
 		t.Errorf("unexpected mode info: %+v", mode)
 	}
 

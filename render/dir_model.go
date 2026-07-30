@@ -300,10 +300,6 @@ func (dm *DirModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				dm.filePreview = nil
 				return dm, nil
 			}
-			if bindingKey(key) == previewVersion && dm.filePreview.CanToggleVersion() {
-				dm.filePreview.ToggleVersion()
-				return dm, nil
-			}
 			// Pass other keys to the file preview for scrolling
 			_, cmd = dm.filePreview.Update(msg)
 			return dm, cmd

@@ -69,11 +69,11 @@ tokui ref v1.0               # 查看某个 tag/commit 的完整代码构成
 
 形态与全量模式完全一致，只是数据源是 `git archive <ref>` 解包到临时目录的快照。它是 Compare 模式的简化形态（只看一侧），实现几乎零成本（复用 `gitx.Archive` + 现有 `BuildFromProvider`）。
 
-### 场景 D：文件级历史预览（`git show` 的直接场景）
+### 场景 D：文件级 diff 预览
 
-Diff / Compare 模式下，预览（`Enter`）默认显示 S2 内容；按 `v` 切换到该文件的 S1 版本（`git show S1:<path>`），再按切回。已删除文件无 S2 内容，直接预览 S1 版本。回答："这个文件改动前长什么样。"
+Diff / Compare 模式下，预览（`Enter`）直接显示该文件在当前 range 下的 diff（`git diff [--cached] [rev] -- <path>`，逐行着色：新增绿、删除红、hunk 头青）。回答："这个文件到底改了什么。"
 
-注意与场景 C 的工具分工：**整树历史快照用 `git archive`**（Provider 需要真实文件系统），**单文件历史内容用 `git show`**（按需取一个文件，轻量）。不对整棵树逐文件调 `git show`。
+注意与场景 C 的工具分工：**整树历史快照用 `git archive`**（Provider 需要真实文件系统），**单文件 diff 用 `git diff`**（按需取一个文件，轻量）。
 
 ### 场景 E：非 git 环境降级
 
@@ -83,7 +83,7 @@ Diff / Compare 模式下，预览（`Enter`）默认显示 S2 内容；按 `v` �
 ### 明确不做的场景
 
 - **不做** blame / log / commit 浏览等 lazygit 类功能，避免偏离"代码统计可视化"定位。
-- **不做** 文件级 diff 内容展示（`git diff` 逐行视图），预览仍展示 S2 文件全文。
+- **不做** diff 内代码的语法高亮与自动换行，预览是着色的两列并排 diff（窄屏降级为单列 unified diff），不做完整的 diff 查看器。
 
 ---
 
@@ -156,7 +156,7 @@ v1.0..v2.0 · 23 files changed · ΔCode +1,204 · ΔCmplx +31 · scc 3.x
 - **排序**：`s` 循环键扩展为 `Name → + → - → Δ → % → Code → Total`（Compare 模式为 `Name → ΔCode → ΔCmplx`），`S` 反转方向，逻辑不变。
 - **树模式 / treemap**：不做特殊处理，churn/Δ 参与块大小计算（treemap 按 |Δ| 或 churn 占比）。
 - **语言过滤**（`Tab` / `Ctrl+L`）：Diff 模式语言归属来自 S2 侧 Provider 结果（见 4.3），行为与现有一致；已删除文件语言按扩展名映射。
-- **文件预览**：`Enter` 预览 S2 文件全文（现有逻辑）；按 `v` 切换为该文件的 S1 版本（`git show S1:<path>`），再按切回；已删除文件直接预览 S1 版本。
+- **文件预览**：`Enter` 预览该文件在当前 range 下的 diff（`gitx.DiffFile`，着色统一 diff）；无文本 diff 时显示提示。
 - **窄屏适配**：复用现有隐藏策略，优先级 `Name > + > - > Δ > % > Code > Total`（从右往左隐藏，`%` 在 `Total` 之后、`Code` 之前隐藏）。
 
 ---
@@ -197,8 +197,12 @@ func RepoRoot(path string) (string, error)
 // Archive 将 ref 的工作树解包到临时目录，返回目录路径与清理函数。
 func Archive(ref string) (dir string, cleanup func(), err error)
 
-// ShowFile 返回 ref:path 的文件内容（用于 S1 版本与已删除文件预览）；空 ref 读 index 中的已暂存 blob。
+// ShowFile 返回 ref:path 的文件内容；空 ref 读 index 中的已暂存 blob。
 func ShowFile(repoRoot, ref, path string) ([]byte, error)
+
+// DiffFile 返回单个文件的统一 diff（git diff --no-color --no-ext-diff -M [--cached] [rev] -- path [oldPath]），
+// 用于 Diff/Compare 模式的文件预览；rev/cached 语义与 Numstat 一致，oldPath 仅在 rename 时设置。
+func DiffFile(repoRoot, rev string, cached bool, path, oldPath string) (string, error)
 
 // ShowRange 将单个 commit 展开为 "commit^..commit"（root commit 以空树为 S1）。
 func ShowRange(repoRoot, commit string) (rangeSpec, s1Ref, s2Ref string, err error)
@@ -270,11 +274,11 @@ tokui compare <a..b> [directory]      # 两个 ref 的统计净变化（range �
 tokui ref <ref> [directory]           # 单快照浏览（ref 必填）
 ```
 
-`diff` 的三种形态统一收敛为一个内部 `diffSpec`（numstat rev、cached 标志、S1/S2 的 ref 与标签、worktree 标志、range 标签），由同一个 `runDiffMode` 消费：
+`diff` 的三种形态统一收敛为一个内部 `diffSpec`（numstat rev、cached 标志、S2 ref、worktree 标志、range 标签），由同一个 `runDiffMode` 消费；rev 与 cached 同时透传给视图层（`ModeInfo.DiffRev` / `ModeInfo.DiffCached`），供文件级 diff 预览使用：
 
-- **裸 `diff`**：numstat 不带 rev（`git diff`，仅未暂存改动）；S1 是 index，预览走 `git show :<path>`（`gitx.ShowFile` 的空 ref 形式）；S2 分析工作区。
-- **`diff --staged [rev]`**：numstat 带 `--cached`（默认对 HEAD）；S2 真身是 index，没有文件系统形态，**分析时用工作区近似**（既定行为）；S1 预览 ref 为 rev（默认 HEAD）。
-- **`diff <range>`**：单 rev 对该 rev 与工作区做 diff；`a..b` / `a...b` 对两个 ref 做 diff（`...` 的 S1 预览 base 解析为 merge-base）。
+- **裸 `diff`**：numstat 不带 rev（`git diff`，仅未暂存改动）；S2 分析工作区。
+- **`diff --staged [rev]`**：numstat 带 `--cached`（默认对 HEAD）；S2 真身是 index，没有文件系统形态，**分析时用工作区近似**（既定行为）。
+- **`diff <range>`**：单 rev 对该 rev 与工作区做 diff；`a..b` / `a...b` 对两个 ref 做 diff（`...` 的 merge-base 由 git 自己解析，numstat 与 diff 预览共用同一 rev 字符串）。
 - **`show [commit]`**：展开为 `commit^..commit`（merge commit 取第一父）；root commit 无父，以空树 hash `4b825dc…` 作为 S1，全部文件记为新增（`gitx.ShowRange`）。
 
 执行分支（各子命令 RunE → 共享的 `runGitMode` → 模式 builder）：
@@ -295,12 +299,15 @@ case "ref":
 - 子命令与 pipe 模式互斥（stdin 非 tty 时报错提示）。
 - range 语法直接透传给 `git diff`（支持 `..`、`...`、单个 commit、`HEAD`），不在 CLI 层做语法校验，git 报错原样透传并附示例。
 - `git diff` 调用在 rev 后固定带 `--`，防止误拼的 rev 与目录同名时静默退化为 pathspec diff。
-- 视图层需要知道当前模式与 range 字符串（状态栏展示），`initViewModel` 增加一个 `ModeInfo` 参数：
+- 视图层需要知道当前模式与 range 字符串（状态栏展示）以及逐文件 diff 所需的 rev/cached（diff 预览），`initViewModel` 增加一个 `ModeInfo` 参数：
 
 ```go
 type ModeInfo struct {
-    Kind  ModeKind // Full | Diff | Compare | Ref
-    Range string   // diff/compare 的 range，或 ref 名
+    Kind       ModeKind // Full | Diff | Compare | Ref
+    Range      string   // diff/compare 的 range，或 ref 名
+    RepoRoot   string   // 仓库根；条目路径位于其下
+    DiffRev    string   // 逐文件 "git diff" 预览的 rev/range；空 = 工作区对 index
+    DiffCached bool     // 已暂存 diff（"git diff --cached"）
 }
 ```
 
@@ -314,7 +321,7 @@ type ModeInfo struct {
   - `s` 的排序循环键表随列定义动态生成。
 - **`a` 键**：切换"仅变更 / 全量"。实现为树的过滤器（类似现有语言过滤），而非重建树。
 - **状态栏**：`dirsSummary()` 按 `ModeInfo` 渲染 3.4 节的汇总行。
-- **预览（`git show` 场景）**：Diff / Compare 模式下预览默认显示 S2 内容，按 `v` 切换为 S1 版本（`gitx.ShowFile(repoRoot, S1, path)`），再按切回；已删除文件直接预览 S1 版本。预览层持有 `repoRoot` 与 S1 ref，**按需调用** `ShowFile`（不预取，避免为大文件浪费 IO）。预览覆盖层标题栏显示当前版本标记（`S1: v1.0` / `S2: worktree`）。
+- **预览（diff 场景）**：Diff / Compare 模式下预览直接显示该文件的 diff——预览层持有 `repoRoot` 与 `ModeInfo.DiffRev`/`DiffCached`，**按需调用** `gitx.DiffFile`（不预取，避免为大文件浪费 IO）。unified diff 经 `parseUnifiedDiff` 解析后按两列并排渲染（左 S1 右 S2，删除/新增行底色区分、带行号、删除与新增块逐行对齐），宽度不足或无 hunk（二进制、纯 rename）时降级为着色的单列 unified diff。重命名文件把 `Change.OldPath` 一并作为 pathspec，配合 `-M` 输出 rename diff。预览覆盖层标题栏显示 `Diff: <文件名> · <range>`。
 
 ### 4.6 语言归属（Diff 模式已删除文件）
 
@@ -341,7 +348,7 @@ S2 结果中没有已删除文件，无法从 Provider 拿语言。实现一个�
 4. 渲染层：`CapChurn` 能力位、Diff 列定义、三个新 SortKey、状态栏汇总行。
 5. `a` 键全量/仅变更切换。
 6. 已删除文件的扩展名语言映射。
-7. 文件级历史预览：`gitx.ShowFile` + 预览层 `v` 键切换 S1/S2 版本（含已删除文件直接预览 S1）。
+7. 文件级 diff 预览：`gitx.DiffFile` + 预览层着色统一 diff（rename 通过 `Change.OldPath` 覆盖双侧路径）。
 8. `gitx.Archive` + `ref` 子命令单快照模式（复用现有 `BuildFromProvider`，最小落地）。
 9. `BuildFromCompare` + `compare` 子命令 + Compare 列定义（`CapDelta`）。
 10. 补充测试：
@@ -349,7 +356,7 @@ S2 结果中没有已删除文件，无法从 Provider 拿语言。实现一个�
    - `BuildFromDiff` / `BuildFromCompare` 树结构与聚合值。
    - 目录级 Change 聚合与语言过滤交互。
    - 动态列在四种模式 × 不同终端宽度下的渲染。
-   - `ShowFile` 预览切换（修改/删除/新增文件）。
+   - `DiffFile` 预览（修改/删除/新增/rename/二进制文件，staged 与 unstaged）。
    - 非 git 目录、git 缺失、非法 range/ref 的错误提示。
    - `diff`/`show`/`compare`/`ref` 子命令与 pipe、`--tree/--treemap` 的组合行为。
 
@@ -368,10 +375,10 @@ S2 结果中没有已删除文件，无法从 Provider 拿语言。实现一个�
 | **大仓库双跑成本** | Compare 模式为显式开关；Diff 模式只分析 S2 一侧，成本与现有全量一致。 |
 | **Compare 模式 S2=HEAD 的语义** | `tokui compare v1..HEAD` 的 S2 分析的是工作区（含未提交改动），这是 §4.3 的既定行为；状态栏将 range 显示为 `v1..HEAD (worktree)` 以明确标注。 |
 | **rename 路径归属** | `-M` 检测后按新路径归属，churn 记在该路径；Compare 按路径 join 时 rename 会表现为 删+增，可接受，不特殊处理。 |
-| **已删除文件无语言/无 S2 统计** | 扩展名映射归语言；统计置零、Kind=Deleted，预览走 `git show`。 |
+| **已删除文件无语言/无 S2 统计** | 扩展名映射归语言；统计置零、Kind=Deleted，预览显示删除 diff。 |
 
 ---
 
 ## 8. 结论
 
-git 集成的正确形态是 **gitx（变更集/快照来源）+ 现有 Provider（统计）+ Tree 层 join**，而不是第三个 Provider。git 三个命令各司其职：`git diff --numstat` 产出变更集（Diff 模式），`git archive` 产出整树快照（`ref` 与 Compare 模式），`git show` 按需取单文件历史内容（预览 `v` 键切换）。第一阶段 Diff 模式（`tokui diff`）覆盖 code review 这个最高频场景，展示上以 S2 为主体、churn 三列做增量；第二阶段补快照浏览（`tokui ref`）与净变化对比（`tokui compare`）。各模式共享同一棵树与同一套交互，渲染层通过既有 Capability 机制动态出列，侵入可控。
+git 集成的正确形态是 **gitx（变更集/快照来源）+ 现有 Provider（统计）+ Tree 层 join**，而不是第三个 Provider。git 三个命令各司其职：`git diff --numstat` 产出变更集（Diff 模式），`git archive` 产出整树快照（`ref` 与 Compare 模式），`git diff <rev> -- <path>` 按需取单文件 diff（预览）。第一阶段 Diff 模式（`tokui diff`）覆盖 code review 这个最高频场景，展示上以 S2 为主体、churn 三列做增量；第二阶段补快照浏览（`tokui ref`）与净变化对比（`tokui compare`）。各模式共享同一棵树与同一套交互，渲染层通过既有 Capability 机制动态出列，侵入可控。

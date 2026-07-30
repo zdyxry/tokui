@@ -571,16 +571,12 @@ func initViewModel(tree *structure.Tree, info provider.Info, modeInfo render.Mod
 	return vm, nil
 }
 
-// diffSpec describes one "tokui diff" invocation: which rev to ask git for,
-// how to build the S2 snapshot and how to label both sides for the status
-// bar and the S1/S2 previews.
+// diffSpec describes one "tokui diff" invocation: which rev to ask git for
+// and how to build the S2 snapshot.
 type diffSpec struct {
 	rev        string // rev/range for the numstat diff; "" = worktree vs index (unstaged)
 	cached     bool   // --staged: diff the index against rev (default HEAD)
-	s1Ref      string // S1 preview ref for "git show"; "" = the index (staged blob)
-	s1Label    string // human-readable S1 marker, e.g. "main" or "index"
-	s2Ref      string // S2 preview ref; "" = the working tree
-	s2Label    string // human-readable S2 marker, e.g. "worktree"
+	s2Ref      string // target ref archived for the S2 analysis; "" = the working tree
 	worktree   bool   // analyze the worktree as S2 (vs archiving s2Ref)
 	rangeLabel string // status-bar label for the diff
 }
@@ -592,10 +588,6 @@ type diffSpec struct {
 // (a single rev diffs against the worktree, "a..b"/"a...b" diff two refs).
 func newDiffSpec(rangeArg string, staged bool) diffSpec {
 	if staged {
-		s1 := rangeArg
-		if s1 == "" {
-			s1 = "HEAD"
-		}
 		label := "--staged"
 		if rangeArg != "" {
 			label = rangeArg + " --staged"
@@ -605,32 +597,20 @@ func newDiffSpec(rangeArg string, staged bool) diffSpec {
 		return diffSpec{
 			rev:        rangeArg,
 			cached:     true,
-			s1Ref:      s1,
-			s1Label:    s1,
-			s2Label:    "worktree",
 			worktree:   true,
 			rangeLabel: label,
 		}
 	}
 	if rangeArg == "" {
 		return diffSpec{
-			s1Label:    "index",
-			s2Label:    "worktree",
 			worktree:   true,
 			rangeLabel: "worktree (unstaged)",
 		}
 	}
-	s1, s2, worktree := splitRange(rangeArg)
-	s2Label := s2
-	if worktree {
-		s2Label = "worktree"
-	}
+	_, s2, worktree := splitRange(rangeArg)
 	return diffSpec{
 		rev:        rangeArg,
-		s1Ref:      s1,
-		s1Label:    s1,
 		s2Ref:      s2,
-		s2Label:    s2Label,
 		worktree:   worktree,
 		rangeLabel: rangeArg,
 	}
@@ -659,17 +639,6 @@ func runDiffMode(tree *structure.Tree, p provider.Provider, path string, spec di
 	}
 	changes = scopeChangesToSubdir(changes, repoRoot, path)
 
-	s1Ref := spec.s1Ref
-	if !spec.cached && strings.Contains(spec.rev, "...") {
-		// "git diff A...B" diffs the merge-base of A and B against B; resolve
-		// the merge-base so S1 previews ("git show S1:path") match the diff
-		// base. Fall back to A when no common ancestor exists.
-		s1, s2, _ := splitRange(spec.rev)
-		if base, mbErr := gitx.MergeBase(repoRoot, s1, s2); mbErr == nil {
-			s1Ref = base
-		}
-	}
-
 	var s2 provider.Result
 	if spec.worktree {
 		// The diff target is the working tree: analyze it in place. (In
@@ -678,8 +647,8 @@ func runDiffMode(tree *structure.Tree, p provider.Provider, path string, spec di
 		s2, err = p.Analyze(repoRoot)
 	} else {
 		// Historical S2: unpack the ref into a temporary directory. The
-		// archive is only needed for the analysis itself (S2 previews go
-		// through "git show"), so it is cleaned up when this function returns.
+		// archive is only needed for the analysis itself (diff previews go
+		// through "git diff"), so it is cleaned up when this function returns.
 		var cleanup func()
 		s2, cleanup, err = analyzeRef(p, repoRoot, spec.s2Ref)
 		if cleanup != nil {
@@ -695,13 +664,11 @@ func runDiffMode(tree *structure.Tree, p provider.Provider, path string, spec di
 	}
 
 	return render.ModeInfo{
-		Kind:     render.ModeDiff,
-		Range:    spec.rangeLabel,
-		RepoRoot: repoRoot,
-		S1Ref:    s1Ref,
-		S1Label:  spec.s1Label,
-		S2Ref:    spec.s2Ref,
-		S2Label:  spec.s2Label,
+		Kind:       render.ModeDiff,
+		Range:      spec.rangeLabel,
+		RepoRoot:   repoRoot,
+		DiffRev:    spec.rev,
+		DiffCached: spec.cached,
 	}, nil
 }
 
@@ -719,17 +686,14 @@ func runShowMode(tree *structure.Tree, p provider.Provider, path, commit string)
 		return render.ModeInfo{}, NewCLIError(err)
 	}
 
-	rangeSpec, s1Ref, s2Ref, err := gitx.ShowRange(repoRoot, commit)
+	rangeSpec, _, s2Ref, err := gitx.ShowRange(repoRoot, commit)
 	if err != nil {
 		return render.ModeInfo{}, NewCLIError(fmt.Errorf("%w\n\nExample:\n  tokui show HEAD", err))
 	}
 
 	return runDiffMode(tree, p, path, diffSpec{
 		rev:        rangeSpec,
-		s1Ref:      s1Ref,
-		s1Label:    s1Ref,
 		s2Ref:      s2Ref,
-		s2Label:    s2Ref,
 		rangeLabel: commit,
 	})
 }
@@ -814,23 +778,20 @@ func runCompareMode(tree *structure.Tree, p provider.Provider, path, compareRang
 	}
 
 	rangeLabel := compareRange
-	s2Label := s2Ref
-	s2PreviewRef := s2Ref
+	diffRev := compareRange
 	if s2Worktree {
 		// S2 == HEAD compares against the working tree, uncommitted changes
-		// included (design-git-diff.md §4.3); say so in the status bar.
+		// included (design-git-diff.md §4.3); say so in the status bar. A
+		// single-rev "git diff s1" diffs s1 against the worktree, matching
+		// that semantics for the per-file diff previews.
 		rangeLabel += " (worktree)"
-		s2Label = "worktree"
-		s2PreviewRef = ""
+		diffRev = s1Ref
 	}
 	return render.ModeInfo{
 		Kind:     render.ModeCompare,
 		Range:    rangeLabel,
 		RepoRoot: repoRoot,
-		S1Ref:    s1Ref,
-		S1Label:  s1Ref,
-		S2Ref:    s2PreviewRef,
-		S2Label:  s2Label,
+		DiffRev:  diffRev,
 	}, nil
 }
 

@@ -205,7 +205,13 @@ func (vm *ViewModel) levelDown() {
 
 func (vm *ViewModel) toggleExpand() {
 	entry := vm.dirModel.SelectedEntry()
-	if entry == nil || !entry.IsDir {
+	if entry == nil {
+		return
+	}
+	// Files have nothing to expand: open the preview, like levelDown does in
+	// nav mode.
+	if !entry.IsDir {
+		vm.dirModel.ShowFilePreview(entry)
 		return
 	}
 	entry.Expanded = !entry.Expanded

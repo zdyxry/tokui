@@ -16,8 +16,9 @@ type Change struct {
 	// instead of the numeric fields so zero-churn changes stay visible.
 	Present bool
 	// OldPath is the S1-side path of a renamed file (Diff mode only), used by
-	// the preview layer to fetch "git show S1:OldPath". Empty for non-rename
-	// entries and in Compare mode, where a rename appears as delete+add.
+	// the preview layer so the "git diff" pathspec covers both sides of the
+	// rename. Empty for non-rename entries and in Compare mode, where a
+	// rename appears as delete+add.
 	OldPath string
 	// Compare-mode only (populated by BuildFromCompare):
 	PrevCode       int64 // S1-side Code

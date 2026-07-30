@@ -597,3 +597,130 @@ func TestShowFileIndex(t *testing.T) {
 		t.Errorf("ShowFile index = %q, want the staged blob %q", data, "staged\n")
 	}
 }
+
+func TestDiffFileModified(t *testing.T) {
+	repo := initRepo(t)
+	writeFile(t, repo, "main.go", []byte("old version\n"))
+	commitAll(t, repo, "initial")
+	writeFile(t, repo, "main.go", []byte("new version\n"))
+
+	diff, err := gitx.DiffFile(repo, "HEAD", false, "main.go", "")
+	if err != nil {
+		t.Fatalf("DiffFile: %v", err)
+	}
+	for _, want := range []string{"diff --git a/main.go b/main.go", "@@", "-old version", "+new version"} {
+		if !strings.Contains(diff, want) {
+			t.Errorf("diff missing %q:\n%s", want, diff)
+		}
+	}
+}
+
+func TestDiffFileAddedAndDeleted(t *testing.T) {
+	repo := initRepo(t)
+	writeFile(t, repo, "gone.txt", []byte("x\ny\n"))
+	commitAll(t, repo, "initial")
+	writeFile(t, repo, "new.txt", []byte("1\n2\n"))
+	if err := os.Remove(filepath.Join(repo, "gone.txt")); err != nil {
+		t.Fatal(err)
+	}
+	// Stage the changes: untracked files are invisible to "git diff" (and to
+	// Numstat), so an added file in the change set always comes from the
+	// index or a commit range.
+	git(t, repo, "add", "-A")
+
+	added, err := gitx.DiffFile(repo, "HEAD", false, "new.txt", "")
+	if err != nil {
+		t.Fatalf("DiffFile added: %v", err)
+	}
+	if !strings.Contains(added, "new file mode") || !strings.Contains(added, "+1") {
+		t.Errorf("added diff mismatch:\n%s", added)
+	}
+
+	deleted, err := gitx.DiffFile(repo, "HEAD", false, "gone.txt", "")
+	if err != nil {
+		t.Fatalf("DiffFile deleted: %v", err)
+	}
+	if !strings.Contains(deleted, "deleted file mode") || !strings.Contains(deleted, "-x") {
+		t.Errorf("deleted diff mismatch:\n%s", deleted)
+	}
+}
+
+func TestDiffFileRenamed(t *testing.T) {
+	repo := initRepo(t)
+	writeFile(t, repo, "old.txt", []byte("one\ntwo\nthree\nfour\nfive\n"))
+	commitAll(t, repo, "initial")
+	git(t, repo, "mv", "old.txt", "new.txt")
+	commitAll(t, repo, "rename")
+
+	diff, err := gitx.DiffFile(repo, "HEAD~1..HEAD", false, "new.txt", "old.txt")
+	if err != nil {
+		t.Fatalf("DiffFile: %v", err)
+	}
+	if !strings.Contains(diff, "rename from old.txt") || !strings.Contains(diff, "rename to new.txt") {
+		t.Errorf("rename diff mismatch:\n%s", diff)
+	}
+}
+
+func TestDiffFileStaged(t *testing.T) {
+	repo := initRepo(t)
+	writeFile(t, repo, "staged.txt", []byte("a\n"))
+	writeFile(t, repo, "unstaged.txt", []byte("a\n"))
+	commitAll(t, repo, "initial")
+	writeFile(t, repo, "staged.txt", []byte("a\nb\n"))
+	git(t, repo, "add", "staged.txt")
+	writeFile(t, repo, "unstaged.txt", []byte("a\nb\nc\n"))
+
+	// Bare (worktree vs index): only the unstaged change shows up.
+	diff, err := gitx.DiffFile(repo, "", false, "unstaged.txt", "")
+	if err != nil {
+		t.Fatalf("DiffFile unstaged: %v", err)
+	}
+	if !strings.Contains(diff, "+b") {
+		t.Errorf("unstaged diff mismatch:\n%s", diff)
+	}
+	diff, err = gitx.DiffFile(repo, "", false, "staged.txt", "")
+	if err != nil {
+		t.Fatalf("DiffFile unstaged staged.txt: %v", err)
+	}
+	if diff != "" {
+		t.Errorf("staged.txt must have no unstaged diff, got:\n%s", diff)
+	}
+
+	// Cached (index vs HEAD): only the staged change shows up.
+	diff, err = gitx.DiffFile(repo, "", true, "staged.txt", "")
+	if err != nil {
+		t.Fatalf("DiffFile cached: %v", err)
+	}
+	if !strings.Contains(diff, "+b") {
+		t.Errorf("cached diff mismatch:\n%s", diff)
+	}
+}
+
+func TestDiffFileBinary(t *testing.T) {
+	repo := initRepo(t)
+	writeFile(t, repo, "keep.txt", []byte("keep\n"))
+	commitAll(t, repo, "initial")
+	writeFile(t, repo, "blob.bin", []byte{0x00, 0x01, 0x02, 0x00, 0xff, 0x00})
+	commitAll(t, repo, "add binary")
+
+	diff, err := gitx.DiffFile(repo, "HEAD~1..HEAD", false, "blob.bin", "")
+	if err != nil {
+		t.Fatalf("DiffFile: %v", err)
+	}
+	if !strings.Contains(diff, "Binary files") {
+		t.Errorf("binary diff must report \"Binary files ... differ\", got:\n%s", diff)
+	}
+}
+
+func TestDiffFileLeadingDashRejected(t *testing.T) {
+	repo := initRepo(t)
+	writeFile(t, repo, "file.txt", []byte("v1\n"))
+	commitAll(t, repo, "v1")
+
+	if _, err := gitx.DiffFile(repo, "-HEAD", false, "file.txt", ""); err == nil {
+		t.Error("DiffFile with leading-dash range: expected error, got nil")
+	}
+	if _, err := gitx.DiffFile(repo, "HEAD", false, "-file.txt", ""); err == nil {
+		t.Error("DiffFile with leading-dash path: expected error, got nil")
+	}
+}

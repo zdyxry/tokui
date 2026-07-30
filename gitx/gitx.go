@@ -20,12 +20,12 @@ import (
 // inside a git repository. Use errors.Is to detect it.
 var ErrNotGitRepo = errors.New("not a git repository")
 
-// ErrFileTooLarge is returned (wrapped) by ShowFile when the file contents at
-// the given ref exceed the size limit.
+// ErrFileTooLarge is returned (wrapped) by ShowFile and DiffFile when the
+// contents at the given ref exceed the size limit.
 var ErrFileTooLarge = errors.New("file too large")
 
-// maxShowFileSize caps ShowFile output, matching the on-disk preview limit of
-// the render layer.
+// maxShowFileSize caps ShowFile and DiffFile output, matching the on-disk
+// preview limit of the render layer.
 const maxShowFileSize = 10 << 20 // 10 MB
 
 // ChangeKind describes how a file changed between two git snapshots.
@@ -219,9 +219,9 @@ func Archive(ref string) (dir string, cleanup func(), err error) {
 }
 
 // ShowFile returns the contents of path at the given ref ("git show
-// ref:path"), used for S1-side and deleted-file previews. An empty ref reads
-// the staged blob from the index ("git show :path"). Contents larger than
-// 10 MB are rejected with an error wrapping ErrFileTooLarge.
+// ref:path"). An empty ref reads the staged blob from the index ("git show
+// :path"). Contents larger than 10 MB are rejected with an error wrapping
+// ErrFileTooLarge.
 func ShowFile(repoRoot, ref, path string) ([]byte, error) {
 	if err := rejectOption("ref", ref); err != nil {
 		return nil, err
@@ -237,6 +237,64 @@ func ShowFile(repoRoot, ref, path string) ([]byte, error) {
 		return nil, fmt.Errorf("%w: %s at %s exceeds %d bytes", ErrFileTooLarge, path, ref, maxShowFileSize)
 	}
 	return data, nil
+}
+
+// DiffFile returns the unified diff of a single file ("git diff --no-color
+// --no-ext-diff -M [--cached] [rev] -- path [oldPath]"), used by the render
+// layer for diff previews. The rev/cached pair carries the same meaning as in
+// Numstat: an empty rev with cached=false diffs the worktree against the
+// index; cached=true diffs the index against rev (default HEAD). oldPath is
+// only set for renames, so the pathspec covers both sides and -M can report
+// the rename. Output larger than 10 MB is rejected with an error wrapping
+// ErrFileTooLarge.
+func DiffFile(repoRoot, rev string, cached bool, path, oldPath string) (string, error) {
+	if err := rejectOption("diff range", rev); err != nil {
+		return "", err
+	}
+	if err := rejectOption("path", path); err != nil {
+		return "", err
+	}
+	if oldPath != "" {
+		if err := rejectOption("path", oldPath); err != nil {
+			return "", err
+		}
+	}
+	args := []string{"diff", "--no-color", "--no-ext-diff", "-M"}
+	if cached {
+		args = append(args, "--cached")
+	}
+	if rev != "" {
+		args = append(args, rev)
+	}
+	args = append(args, "--", path)
+	if oldPath != "" {
+		args = append(args, oldPath)
+	}
+
+	cmd := exec.Command("git", append([]string{"-C", repoRoot}, args...)...)
+	// Keep user-configured external diff drivers out of the output even when
+	// they are forced through the environment rather than git config.
+	env := make([]string, 0, len(os.Environ()))
+	for _, kv := range os.Environ() {
+		if strings.HasPrefix(kv, "GIT_EXTERNAL_DIFF=") || strings.HasPrefix(kv, "GIT_DIFF_OPTS=") {
+			continue
+		}
+		env = append(env, kv)
+	}
+	cmd.Env = env
+
+	out, err := cmd.Output()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return "", fmt.Errorf("git %s failed: %s", strings.Join(args, " "), strings.TrimSpace(string(exitErr.Stderr)))
+		}
+		return "", fmt.Errorf("failed to execute git: %w", err)
+	}
+	if len(out) > maxShowFileSize {
+		return "", fmt.Errorf("%w: diff of %s exceeds %d bytes", ErrFileTooLarge, path, maxShowFileSize)
+	}
+	return string(out), nil
 }
 
 // gitOutput runs git with -C dir and returns its standard output.

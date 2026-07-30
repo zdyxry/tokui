@@ -51,8 +51,6 @@ func TestNewDiffSpec(t *testing.T) {
 		{
 			name: "bare diff is worktree vs index",
 			wantSpec: diffSpec{
-				s1Label:    "index",
-				s2Label:    "worktree",
 				worktree:   true,
 				rangeLabel: "worktree (unstaged)",
 			},
@@ -62,9 +60,6 @@ func TestNewDiffSpec(t *testing.T) {
 			staged: true,
 			wantSpec: diffSpec{
 				cached:     true,
-				s1Ref:      "HEAD",
-				s1Label:    "HEAD",
-				s2Label:    "worktree",
 				worktree:   true,
 				rangeLabel: "--staged",
 			},
@@ -76,9 +71,6 @@ func TestNewDiffSpec(t *testing.T) {
 			wantSpec: diffSpec{
 				rev:        "HEAD~2",
 				cached:     true,
-				s1Ref:      "HEAD~2",
-				s1Label:    "HEAD~2",
-				s2Label:    "worktree",
 				worktree:   true,
 				rangeLabel: "HEAD~2 --staged",
 			},
@@ -88,9 +80,6 @@ func TestNewDiffSpec(t *testing.T) {
 			rangeArg: "HEAD~3",
 			wantSpec: diffSpec{
 				rev:        "HEAD~3",
-				s1Ref:      "HEAD~3",
-				s1Label:    "HEAD~3",
-				s2Label:    "worktree",
 				worktree:   true,
 				rangeLabel: "HEAD~3",
 			},
@@ -100,10 +89,7 @@ func TestNewDiffSpec(t *testing.T) {
 			rangeArg: "v1.0..v2.0",
 			wantSpec: diffSpec{
 				rev:        "v1.0..v2.0",
-				s1Ref:      "v1.0",
-				s1Label:    "v1.0",
 				s2Ref:      "v2.0",
-				s2Label:    "v2.0",
 				rangeLabel: "v1.0..v2.0",
 			},
 		},

@@ -119,7 +119,7 @@ func TestLevelDownFaintDirNavigates(t *testing.T) {
 	}
 }
 
-func TestLevelDownCompareDeletedFilePreviewsS1(t *testing.T) {
+func TestLevelDownCompareDeletedFilePreviewsDiff(t *testing.T) {
 	repo := initPreviewRepo(t)
 	if err := os.MkdirAll(filepath.Join(repo, "old"), 0o755); err != nil {
 		t.Fatal(err)
@@ -152,9 +152,7 @@ func TestLevelDownCompareDeletedFilePreviewsS1(t *testing.T) {
 		Kind:     ModeCompare,
 		Range:    "v1..v2",
 		RepoRoot: repo,
-		S1Ref:    "HEAD",
-		S1Label:  "v1",
-		S2Label:  "v2",
+		DiffRev:  "HEAD",
 	}
 	nav := NewCodeNavigation(tree)
 	dm := NewDirModelWithMode(nav, info, mode, false, false)
@@ -180,16 +178,47 @@ func TestLevelDownCompareDeletedFilePreviewsS1(t *testing.T) {
 		t.Fatal("expected Enter on a deleted file to open the preview")
 	}
 	fp := dm.filePreview
-	if !fp.s2Missing || !fp.showingS1 {
-		t.Errorf("expected deleted file to fall back to S1, s2Missing=%v showingS1=%v", fp.s2Missing, fp.showingS1)
-	}
 	if fp.errorMsg != "" {
-		t.Fatalf("expected S1 content, got error %q", fp.errorMsg)
+		t.Fatalf("expected the deletion diff, got error %q", fp.errorMsg)
 	}
-	if fp.content != "legacy code\n" {
-		t.Errorf("expected S1 contents of legacy.rb, got %q", fp.content)
+	if !strings.Contains(fp.content, "deleted file mode") || !strings.Contains(fp.content, "legacy code") {
+		t.Errorf("expected the deletion diff of legacy.rb, got:\n%s", fp.content)
 	}
-	if fp.CanToggleVersion() {
-		t.Error("deleted file has no S2 version; toggle must be unavailable")
+}
+
+func TestTreeModeEnterOnFileOpensDiffPreview(t *testing.T) {
+	repo := initPreviewRepo(t)
+
+	changes := []gitx.FileChange{
+		{Path: "main.go", Added: 1, Deleted: 1, Kind: gitx.Modified},
+	}
+	s2 := provider.Result{Files: []provider.FileStats{
+		{Path: filepath.Join(repo, "main.go"), Language: "Go", Code: 1},
+	}}
+	tree := structure.NewTree(nil)
+	if err := tree.BuildFromDiff(changes, s2, repo); err != nil {
+		t.Fatalf("BuildFromDiff: %v", err)
+	}
+
+	info := provider.Info{Name: "tokei", Version: "12.1", Capabilities: provider.CapLines | provider.CapChurn}
+	nav := NewCodeNavigation(tree)
+	dm := NewDirModelWithMode(nav, info, worktreeMode(repo), true /* treeMode */, false)
+	dm.width = 140
+	dm.height = 40
+	dm.Update(ScanFinished{})
+	vm := NewViewModel(nav, dm)
+
+	cursorOnEntry(t, dm, "main.go")
+	vm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if !dm.IsInPreviewMode() {
+		t.Fatal("expected Enter on a file in tree mode to open the preview")
+	}
+	fp := dm.filePreview
+	if fp.errorMsg != "" {
+		t.Fatalf("expected the file diff, got error %q", fp.errorMsg)
+	}
+	if !strings.Contains(fp.content, "old version") || !strings.Contains(fp.content, "new version") {
+		t.Errorf("expected the side-by-side diff of main.go, got:\n%s", fp.content)
 	}
 }

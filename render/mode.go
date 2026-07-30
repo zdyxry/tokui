@@ -16,16 +16,14 @@ const (
 
 // ModeInfo carries the CLI-selected data mode to the view layer. The git
 // fields are only populated in Diff and Compare modes and drive the status
-// bar summary and the S1/S2 preview switching.
+// bar summary and the per-file diff preview.
 type ModeInfo struct {
 	Kind  ModeKind
 	Range string // status-bar label for the diff range or ref
 
-	RepoRoot string // repository root; entry paths live under it
-	S1Ref    string // base ref for "git show" previews; "" means the index
-	S1Label  string // human-readable S1 marker, e.g. "main" or "index"
-	S2Ref    string // target ref; empty means the working tree
-	S2Label  string // human-readable S2 marker, e.g. "worktree"
+	RepoRoot   string // repository root; entry paths live under it
+	DiffRev    string // rev/range for per-file "git diff" previews; "" = worktree vs index
+	DiffCached bool   // staged diff ("git diff --cached")
 }
 
 // Diff reports whether the view is in Diff mode.
@@ -39,7 +37,7 @@ func (m ModeInfo) Compare() bool {
 }
 
 // Changed reports whether the view shows change information (Diff or Compare
-// mode). It gates the changed-only filter, the "a" key, the version-switching
+// mode). It gates the changed-only filter, the "a" key, the per-file diff
 // preview and the change-aware status bar.
 func (m ModeInfo) Changed() bool {
 	return m.Diff() || m.Compare()

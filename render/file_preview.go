@@ -27,19 +27,13 @@ type FilePreview struct {
 	content  string
 	errorMsg string
 
-	// Diff-mode S1/S2 version switching. s2Ref empty means the working tree.
-	repoRoot  string
-	relPath   string // repo-relative path used for "git show"
-	s1Ref     string
-	s1Label   string
-	s2Ref     string
-	s2Label   string
-	showingS1 bool
-	s2Missing bool // no S2 version (deleted file); preview is S1-only
-
-	// Change metadata of the previewed file (Diff/Compare modes).
-	kind    gitx.ChangeKind
-	oldPath string // S1-side path for renamed files
+	// Diff/Compare modes show the file's diff instead of its contents;
+	// diffRange is the mode's range label displayed in the title bar. Empty
+	// outside Diff/Compare modes.
+	diffRange string
+	// rawDiff keeps the unstyled diff so the layout can be recomputed when
+	// the terminal is resized (side-by-side vs unified depends on width).
+	rawDiff string
 }
 
 // NewFilePreview creates a new file preview component
@@ -47,12 +41,11 @@ func NewFilePreview(filePath string, width, height int) *FilePreview {
 	return newFilePreview(filePath, width, height, ModeInfo{}, structure.Change{})
 }
 
-// NewFilePreviewDiff creates a file preview for Diff and Compare modes. The
-// S2 version is shown first (working tree, or the S2 ref when the range
-// targets a historical snapshot); the "v" key switches to the S1 version
-// loaded on demand via "git show". Deleted files fall back to the S1 version
-// directly; renamed files resolve their S1 content through Change.OldPath;
-// added files have no S1 version and show a hint instead of a git error.
+// NewFilePreviewDiff creates a preview for Diff and Compare modes. Instead of
+// the file contents it shows the file's diff for the mode's range ("git diff"
+// style: additions green, deletions red), so the change itself is visible
+// directly. Renamed files resolve through Change.OldPath so the pathspec
+// covers both sides of the rename.
 func NewFilePreviewDiff(filePath string, width, height int, mode ModeInfo, change structure.Change) *FilePreview {
 	return newFilePreview(filePath, width, height, mode, change)
 }
@@ -77,61 +70,106 @@ func newFilePreview(filePath string, width, height int, mode ModeInfo, change st
 		height:   previewHeight, // Use preview height instead of terminal height
 	}
 
-	if mode.Changed() && mode.RepoRoot != "" {
-		fp.repoRoot = mode.RepoRoot
-		fp.s1Ref = mode.S1Ref
-		fp.s1Label = mode.S1Label
-		fp.s2Ref = mode.S2Ref
-		fp.s2Label = mode.S2Label
-		fp.kind = change.Kind
-		fp.oldPath = change.OldPath
-		if rel, err := filepath.Rel(mode.RepoRoot, filePath); err == nil {
-			fp.relPath = filepath.ToSlash(rel)
-		}
-	}
-
 	// Initialize viewport - leave space for borders, title, footer and padding
 	viewportWidth := previewWidth - 10  // Leave space for box borders and padding
 	viewportHeight := previewHeight - 8 // Leave space for title, footer and padding
 	fp.viewport = viewport.New(viewportWidth, viewportHeight)
 
-	// Load file content
-	fp.loadFileContent()
+	// Load content: the per-file diff in Diff/Compare modes, the file
+	// contents otherwise.
+	if mode.Changed() && mode.RepoRoot != "" {
+		fp.diffRange = mode.Range
+		fp.loadDiffContent(mode, change)
+	} else {
+		fp.loadFileContent()
+	}
 
 	return fp
 }
 
-// CanToggleVersion reports whether the preview can switch between the S1 and
-// S2 versions of the file (Diff mode with an S1 side and an available S2
-// version). The check keys on the S1 label rather than the S1 ref because a
-// bare "tokui diff" has the index as S1, which is addressed with an empty
-// ref ("git show :path").
-func (fp *FilePreview) CanToggleVersion() bool {
-	return fp.s1Label != "" && !fp.s2Missing
-}
-
-// ToggleVersion switches between the S2 and S1 versions of the file,
-// reloading the content on demand.
-func (fp *FilePreview) ToggleVersion() {
-	if !fp.CanToggleVersion() {
+// loadDiffContent loads the file's diff for the mode's range via git and sets
+// it, colorized, in the viewport.
+func (fp *FilePreview) loadDiffContent(mode ModeInfo, change structure.Change) {
+	rel, err := filepath.Rel(mode.RepoRoot, fp.filePath)
+	if err != nil {
+		fp.errorMsg = fmt.Sprintf("Error resolving file path: %v", err)
+		fp.content = fp.errorMsg
+		fp.viewport.SetContent(fp.content)
+		fp.ready = true
 		return
 	}
-	fp.showingS1 = !fp.showingS1
-	fp.viewport.GotoTop()
-	fp.loadFileContent()
+	path := filepath.ToSlash(rel)
+
+	diff, err := gitx.DiffFile(mode.RepoRoot, mode.DiffRev, mode.DiffCached, path, change.OldPath)
+	switch {
+	case errors.Is(err, gitx.ErrFileTooLarge):
+		fp.content = "Diff too large to preview (> 10 MB)"
+	case err != nil:
+		fp.errorMsg = fmt.Sprintf("Error loading diff: %v", err)
+		fp.content = fp.errorMsg
+	case diff == "":
+		// Entries in the change set normally always produce a diff; a pure
+		// rename still prints its headers, so this is only a safety net.
+		fp.content = "No textual diff for this file"
+	default:
+		fp.rawDiff = diff
+		fp.content = renderDiff(diff, fp.viewport.Width)
+	}
+
+	fp.viewport.SetContent(fp.content)
+	fp.ready = true
+}
+
+// Diff colorization styles, close to "git diff" colors.
+var (
+	diffAddStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
+	diffDelStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
+	diffHunkStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
+	diffPathStyle = lipgloss.NewStyle().Bold(true)
+	diffMetaStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Faint(true)
+)
+
+// styleDiff colorizes unified diff output: additions green, deletions red,
+// hunk headers cyan, the +++/--- file lines bold and the remaining metadata
+// headers faint. Context lines pass through unchanged.
+func styleDiff(diff string) string {
+	lines := strings.Split(strings.TrimSuffix(diff, "\n"), "\n")
+	for i, line := range lines {
+		switch {
+		case strings.HasPrefix(line, "+++") || strings.HasPrefix(line, "---"):
+			lines[i] = diffPathStyle.Render(line)
+		case strings.HasPrefix(line, "+"):
+			lines[i] = diffAddStyle.Render(line)
+		case strings.HasPrefix(line, "-"):
+			lines[i] = diffDelStyle.Render(line)
+		case strings.HasPrefix(line, "@@"):
+			lines[i] = diffHunkStyle.Render(line)
+		case isDiffMetaLine(line):
+			lines[i] = diffMetaStyle.Render(line)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// isDiffMetaLine reports whether line is a diff metadata header (everything
+// git prints before or instead of hunks).
+func isDiffMetaLine(line string) bool {
+	for _, prefix := range []string{
+		"diff --git", "index ", "old mode", "new mode", "new file mode",
+		"deleted file mode", "similarity index", "dissimilarity index",
+		"rename from ", "rename to ", "copy from ", "copy to ",
+		"Binary files", "GIT binary patch", `\ No newline`,
+	} {
+		if strings.HasPrefix(line, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // loadFileContent reads the file content and sets it in the viewport
 func (fp *FilePreview) loadFileContent() {
-	content, err := fp.loadCurrentVersion()
-	if err != nil && fp.s1Label != "" && !fp.showingS1 && fp.kind == gitx.Deleted {
-		// A deleted file has no S2 version: fall back to the S1 version
-		// directly. Other S2 read failures surface as errors instead of being
-		// misread as a deletion.
-		fp.s2Missing = true
-		fp.showingS1 = true
-		content, err = fp.loadCurrentVersion()
-	}
+	content, err := fp.readFileContent(fp.filePath)
 	if err != nil {
 		fp.errorMsg = fmt.Sprintf("Error reading file: %v", err)
 		fp.content = fp.errorMsg
@@ -142,50 +180,6 @@ func (fp *FilePreview) loadFileContent() {
 
 	fp.viewport.SetContent(fp.content)
 	fp.ready = true
-}
-
-// loadCurrentVersion loads the version of the file matching the current
-// showingS1 state.
-func (fp *FilePreview) loadCurrentVersion() (string, error) {
-	if fp.showingS1 {
-		if fp.kind == gitx.Added {
-			// The file did not exist in S1; don't ask git for a path it
-			// cannot resolve.
-			label := fp.s1Label
-			if label == "" {
-				label = fp.s1Ref
-			}
-			return fmt.Sprintf("Not present in S1 (%s) — file was added", label), nil
-		}
-		path := fp.relPath
-		if fp.kind == gitx.Renamed && fp.oldPath != "" {
-			// The file lived under a different path in S1.
-			path = fp.oldPath
-		}
-		return fp.readGitFile(fp.s1Ref, path)
-	}
-	if fp.s2Ref != "" {
-		return fp.readGitFile(fp.s2Ref, fp.relPath)
-	}
-	return fp.readFileContent(fp.filePath)
-}
-
-// readGitFile loads the file content at the given ref via "git show",
-// applying the same binary-content and size guards as filesystem reads.
-func (fp *FilePreview) readGitFile(ref, path string) (string, error) {
-	data, err := gitx.ShowFile(fp.repoRoot, ref, path)
-	if err != nil {
-		if errors.Is(err, gitx.ErrFileTooLarge) {
-			return "File too large to preview (> 10 MB)", nil
-		}
-		return "", err
-	}
-	content := string(data)
-	if fp.containsBinaryData(content) {
-		return fmt.Sprintf("Binary file detected\nFile size: %.2f KB\nUse appropriate tools to view this file.",
-			float64(len(data))/1024), nil
-	}
-	return content, nil
 }
 
 // readFileContent reads file content with size limits for safety
@@ -285,6 +279,13 @@ func (fp *FilePreview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		fp.viewport.Width = previewWidth - 10
 		fp.viewport.Height = previewHeight - 8
 
+		// The diff layout (side-by-side vs unified) depends on the width;
+		// re-render it for the new viewport.
+		if fp.rawDiff != "" {
+			fp.content = renderDiff(fp.rawDiff, fp.viewport.Width)
+			fp.viewport.SetContent(fp.content)
+		}
+
 	case tea.KeyMsg:
 		// Handle viewport navigation keys
 		switch msg.String() {
@@ -314,10 +315,11 @@ func (fp *FilePreview) View() string {
 		return fp.renderBox(fp.errorMsg)
 	}
 
-	// Create the title, including the S1/S2 version marker in Diff mode
+	// Create the title: Diff/Compare modes show the range label next to the
+	// file name.
 	title := fmt.Sprintf(" File Preview: %s ", fp.fileName)
-	if label := fp.versionLabel(); label != "" {
-		title = fmt.Sprintf(" File Preview: %s · %s ", fp.fileName, label)
+	if fp.diffRange != "" {
+		title = fmt.Sprintf(" Diff: %s · %s ", fp.fileName, fp.diffRange)
 	}
 
 	// Create the content with viewport
@@ -332,19 +334,6 @@ func (fp *FilePreview) View() string {
 	}
 
 	return fp.renderBoxWithContent(title, content, scrollInfo)
-}
-
-// versionLabel returns the S1/S2 marker shown in the preview title bar, or an
-// empty string outside Diff mode. Like CanToggleVersion it keys on the S1
-// label: a bare "tokui diff" has the index as S1 with an empty S1 ref.
-func (fp *FilePreview) versionLabel() string {
-	if fp.s1Label == "" {
-		return ""
-	}
-	if fp.showingS1 {
-		return fmt.Sprintf("S1: %s", fp.s1Label)
-	}
-	return fmt.Sprintf("S2: %s", fp.s2Label)
 }
 
 // renderBox renders a simple box with content
@@ -384,9 +373,6 @@ func (fp *FilePreview) renderBoxWithContent(title, content, scrollInfo string) s
 
 	// Create the footer with help text and scroll info
 	helpText := "Press q/Esc to close, ↑/↓/j/k to scroll, PgUp/PgDn/Home/End to navigate"
-	if fp.CanToggleVersion() {
-		helpText += ", v: switch S1/S2"
-	}
 	var footer string
 	if scrollInfo != "" {
 		// Calculate spacing for justified layout
