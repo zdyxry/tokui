@@ -11,6 +11,12 @@ type Capability uint
 const (
 	CapLines Capability = 1 << iota
 	CapComplexity
+	// CapChurn advertises git churn columns (+/-/Δ). No Provider produces it;
+	// the CLI synthesizes an Info with this capability in Diff mode.
+	CapChurn
+	// CapDelta advertises snapshot comparison columns (S1 → S2, ΔCode,
+	// ΔCmplx). Like CapChurn it is synthesized by the CLI in Compare mode.
+	CapDelta
 )
 
 // Info describes a Provider implementation.

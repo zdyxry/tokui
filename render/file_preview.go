@@ -1,6 +1,7 @@
 package render
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -10,6 +11,9 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/zdyxry/tokui/gitx"
+	"github.com/zdyxry/tokui/structure"
 )
 
 // FilePreview represents the file preview component using viewport
@@ -22,10 +26,31 @@ type FilePreview struct {
 	ready    bool
 	content  string
 	errorMsg string
+
+	// Diff/Compare modes show the file's diff instead of its contents;
+	// diffRange is the mode's range label displayed in the title bar. Empty
+	// outside Diff/Compare modes.
+	diffRange string
+	// rawDiff keeps the unstyled diff so the layout can be recomputed when
+	// the terminal is resized (side-by-side vs unified depends on width).
+	rawDiff string
 }
 
 // NewFilePreview creates a new file preview component
 func NewFilePreview(filePath string, width, height int) *FilePreview {
+	return newFilePreview(filePath, width, height, ModeInfo{}, structure.Change{})
+}
+
+// NewFilePreviewDiff creates a preview for Diff and Compare modes. Instead of
+// the file contents it shows the file's diff for the mode's range ("git diff"
+// style: additions green, deletions red), so the change itself is visible
+// directly. Renamed files resolve through Change.OldPath so the pathspec
+// covers both sides of the rename.
+func NewFilePreviewDiff(filePath string, width, height int, mode ModeInfo, change structure.Change) *FilePreview {
+	return newFilePreview(filePath, width, height, mode, change)
+}
+
+func newFilePreview(filePath string, width, height int, mode ModeInfo, change structure.Change) *FilePreview {
 	// Calculate preview window dimensions (80% of terminal size)
 	previewWidth := int(float64(width) * 0.8)
 	previewHeight := int(float64(height) * 0.8)
@@ -50,10 +75,96 @@ func NewFilePreview(filePath string, width, height int) *FilePreview {
 	viewportHeight := previewHeight - 8 // Leave space for title, footer and padding
 	fp.viewport = viewport.New(viewportWidth, viewportHeight)
 
-	// Load file content
-	fp.loadFileContent()
+	// Load content: the per-file diff in Diff/Compare modes, the file
+	// contents otherwise.
+	if mode.Changed() && mode.RepoRoot != "" {
+		fp.diffRange = mode.Range
+		fp.loadDiffContent(mode, change)
+	} else {
+		fp.loadFileContent()
+	}
 
 	return fp
+}
+
+// loadDiffContent loads the file's diff for the mode's range via git and sets
+// it, colorized, in the viewport.
+func (fp *FilePreview) loadDiffContent(mode ModeInfo, change structure.Change) {
+	rel, err := filepath.Rel(mode.RepoRoot, fp.filePath)
+	if err != nil {
+		fp.errorMsg = fmt.Sprintf("Error resolving file path: %v", err)
+		fp.content = fp.errorMsg
+		fp.viewport.SetContent(fp.content)
+		fp.ready = true
+		return
+	}
+	path := filepath.ToSlash(rel)
+
+	diff, err := gitx.DiffFile(mode.RepoRoot, mode.DiffRev, mode.DiffCached, path, change.OldPath)
+	switch {
+	case errors.Is(err, gitx.ErrFileTooLarge):
+		fp.content = "Diff too large to preview (> 10 MB)"
+	case err != nil:
+		fp.errorMsg = fmt.Sprintf("Error loading diff: %v", err)
+		fp.content = fp.errorMsg
+	case diff == "":
+		// Entries in the change set normally always produce a diff; a pure
+		// rename still prints its headers, so this is only a safety net.
+		fp.content = "No textual diff for this file"
+	default:
+		fp.rawDiff = diff
+		fp.content = renderDiff(diff, fp.viewport.Width)
+	}
+
+	fp.viewport.SetContent(fp.content)
+	fp.ready = true
+}
+
+// Diff colorization styles, close to "git diff" colors.
+var (
+	diffAddStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
+	diffDelStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
+	diffHunkStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
+	diffPathStyle = lipgloss.NewStyle().Bold(true)
+	diffMetaStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Faint(true)
+)
+
+// styleDiff colorizes unified diff output: additions green, deletions red,
+// hunk headers cyan, the +++/--- file lines bold and the remaining metadata
+// headers faint. Context lines pass through unchanged.
+func styleDiff(diff string) string {
+	lines := strings.Split(strings.TrimSuffix(diff, "\n"), "\n")
+	for i, line := range lines {
+		switch {
+		case strings.HasPrefix(line, "+++") || strings.HasPrefix(line, "---"):
+			lines[i] = diffPathStyle.Render(line)
+		case strings.HasPrefix(line, "+"):
+			lines[i] = diffAddStyle.Render(line)
+		case strings.HasPrefix(line, "-"):
+			lines[i] = diffDelStyle.Render(line)
+		case strings.HasPrefix(line, "@@"):
+			lines[i] = diffHunkStyle.Render(line)
+		case isDiffMetaLine(line):
+			lines[i] = diffMetaStyle.Render(line)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// isDiffMetaLine reports whether line is a diff metadata header (everything
+// git prints before or instead of hunks).
+func isDiffMetaLine(line string) bool {
+	for _, prefix := range []string{
+		"diff --git", "index ", "old mode", "new mode", "new file mode",
+		"deleted file mode", "similarity index", "dissimilarity index",
+		"rename from ", "rename to ", "copy from ", "copy to ",
+		"Binary files", "GIT binary patch", `\ No newline`,
+	} {
+		if strings.HasPrefix(line, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // loadFileContent reads the file content and sets it in the viewport
@@ -63,6 +174,7 @@ func (fp *FilePreview) loadFileContent() {
 		fp.errorMsg = fmt.Sprintf("Error reading file: %v", err)
 		fp.content = fp.errorMsg
 	} else {
+		fp.errorMsg = ""
 		fp.content = content
 	}
 
@@ -167,6 +279,13 @@ func (fp *FilePreview) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		fp.viewport.Width = previewWidth - 10
 		fp.viewport.Height = previewHeight - 8
 
+		// The diff layout (side-by-side vs unified) depends on the width;
+		// re-render it for the new viewport.
+		if fp.rawDiff != "" {
+			fp.content = renderDiff(fp.rawDiff, fp.viewport.Width)
+			fp.viewport.SetContent(fp.content)
+		}
+
 	case tea.KeyMsg:
 		// Handle viewport navigation keys
 		switch msg.String() {
@@ -196,8 +315,12 @@ func (fp *FilePreview) View() string {
 		return fp.renderBox(fp.errorMsg)
 	}
 
-	// Create the title
+	// Create the title: Diff/Compare modes show the range label next to the
+	// file name.
 	title := fmt.Sprintf(" File Preview: %s ", fp.fileName)
+	if fp.diffRange != "" {
+		title = fmt.Sprintf(" Diff: %s · %s ", fp.fileName, fp.diffRange)
+	}
 
 	// Create the content with viewport
 	content := fp.viewport.View()

@@ -41,12 +41,17 @@ type DirModel struct {
 	selectedLangs       map[string]bool
 	selectLangsSnapshot map[string]bool
 	selectIndex         int
-	err          error
-	providerInfo provider.Info
-	tableEntries []*tableEntry
-	treeMode     bool
-	treemapMode  bool
-	sortState    SortState
+	err                 error
+	providerInfo        provider.Info
+	modeInfo            ModeInfo
+	tableEntries        []*tableEntry
+	treeMode            bool
+	treemapMode         bool
+	sortState           SortState
+	sortCycle           []SortKey
+	// changedCountCache memoizes changed-file counts per directory for the
+	// Diff-mode status bar.
+	changedCountCache map[*structure.Entry]int
 
 	// Treemap view state
 	treemapBlocks      []treemapBlock
@@ -71,8 +76,16 @@ type DirModel struct {
 
 const tableHeaderHeight = 2 // TableHeaderStyle has BorderBottom and no padding
 
-// NewDirModel creates and initializes a directory view model.
+// NewDirModel creates and initializes a directory view model in full mode.
 func NewDirModel(nav *Navigation, info provider.Info, treeMode, treemapMode bool) *DirModel {
+	return NewDirModelWithMode(nav, info, ModeInfo{Kind: ModeFull}, treeMode, treemapMode)
+}
+
+// NewDirModelWithMode creates and initializes a directory view model for the
+// given data mode. Diff mode replaces the line-breakdown columns with churn
+// columns (+/-/Δ), Compare mode with snapshot delta columns (S1 → S2, ΔCode,
+// ΔCmplx); both enable the changed-only filter.
+func NewDirModelWithMode(nav *Navigation, info provider.Info, modeInfo ModeInfo, treeMode, treemapMode bool) *DirModel {
 	// Treemap and tree mode are mutually exclusive at the view level.
 	if treemapMode {
 		treeMode = false
@@ -81,17 +94,70 @@ func NewDirModel(nav *Navigation, info provider.Info, treeMode, treemapMode bool
 	// Define new column headers for the table. Optional metrics are appended
 	// based on the Provider's advertised capabilities.
 	columns := []Column{
-		{Title: ""},                                    // Icon
-		{Title: ""},                                    // Full path (hidden)
-		{Title: "Name", SortKey: SortByName},           // Name
-		{Title: "Languages", SortKey: SortByLanguages}, // Languages involved
-		{Title: "Code", SortKey: SortByCode},           // Lines of code
-		{Title: "Comments", SortKey: SortByComments},   // Comment lines
-		{Title: "Blanks", SortKey: SortByBlanks},       // Blank lines
-		{Title: "Total", SortKey: SortByTotal},         // Total lines
-		{Title: "% of Parent", SortKey: SortByPercent}, // Percentage of parent directory
+		{Title: ""},                          // Icon
+		{Title: ""},                          // Full path (hidden)
+		{Title: "Name", SortKey: SortByName}, // Name
 	}
-	if info.Capabilities&provider.CapComplexity != 0 {
+	if !modeInfo.Compare() {
+		// Compare mode has no language column (design-git-diff.md §3.3).
+		columns = append(columns, Column{Title: "Languages", SortKey: SortByLanguages})
+	}
+	// The sort cycle follows the column layout of the active mode.
+	sortCycle := []SortKey{
+		SortByName,
+		SortByLanguages,
+		SortByCode,
+		SortByComments,
+		SortByBlanks,
+		SortByTotal,
+		SortByPercent,
+		SortByComplexity,
+	}
+	sortState := SortState{Key: SortByTotal, Desc: true}
+
+	if modeInfo.Diff() {
+		columns = append(columns,
+			Column{Title: "+", SortKey: SortByAdded},   // Lines added in the range
+			Column{Title: "-", SortKey: SortByDeleted}, // Lines deleted in the range
+			Column{Title: "Δ", SortKey: SortByDelta},   // Net line change
+			Column{Title: "%", SortKey: SortByPercent}, // Share of the current directory's churn
+			Column{Title: "Code", SortKey: SortByCode}, // S2-side lines of code
+			Column{Title: "Total", SortKey: SortByTotal},
+		)
+		sortCycle = []SortKey{
+			SortByName,
+			SortByAdded,
+			SortByDeleted,
+			SortByDelta,
+			SortByPercent,
+			SortByCode,
+			SortByTotal,
+		}
+		// Default to the biggest absolute net change first.
+		sortState = SortState{Key: SortByDelta, Desc: true}
+	} else if modeInfo.Compare() {
+		columns = append(columns,
+			Column{Title: "Code (S1 → S2)", SortKey: SortByCode}, // Snapshot comparison
+			Column{Title: "ΔCode", SortKey: SortByDelta},         // Net code change
+			Column{Title: "ΔCmplx", SortKey: SortByComplexity},   // Net complexity change
+		)
+		sortCycle = []SortKey{
+			SortByName,
+			SortByDelta,
+			SortByComplexity,
+		}
+		// Default to the biggest absolute code delta first.
+		sortState = SortState{Key: SortByDelta, Desc: true}
+	} else {
+		columns = append(columns,
+			Column{Title: "Code", SortKey: SortByCode},           // Lines of code
+			Column{Title: "Comments", SortKey: SortByComments},   // Comment lines
+			Column{Title: "Blanks", SortKey: SortByBlanks},       // Blank lines
+			Column{Title: "Total", SortKey: SortByTotal},         // Total lines
+			Column{Title: "% of Parent", SortKey: SortByPercent}, // Percentage of parent directory
+		)
+	}
+	if info.Capabilities&provider.CapComplexity != 0 && !modeInfo.Changed() {
 		columns = append(columns, Column{Title: "Complexity", SortKey: SortByComplexity})
 	}
 
@@ -99,25 +165,36 @@ func NewDirModel(nav *Navigation, info provider.Info, treeMode, treemapMode bool
 	defaultFilters := []filter.EntryFilter{
 		filter.NewNameFilter("Filter by name..."),
 	}
+	if modeInfo.Diff() {
+		// Diff mode starts in changed-only view; the "a" key toggles it.
+		defaultFilters = append(defaultFilters, filter.NewChangedFilter(true))
+	}
+	if modeInfo.Compare() {
+		// Compare mode starts in changed-only view: entries whose Code and
+		// Complexity deltas are both zero are hidden.
+		defaultFilters = append(defaultFilters, filter.NewChangedFilterFunc(true, compareChanged))
+	}
 
 	searchInput := newSearchInput()
 
 	dm := &DirModel{
-		columns:      columns,
-		filters:      filter.NewFiltersList(defaultFilters...),
-		dirsTable:    buildTable(),
-		mode:         PENDING,
-		nav:          nav,
-		langFilterIdx: -1, // Default to show all languages
-		selectMode:   false,
-		selectedLangs: make(map[string]bool),
-		selectIndex:  0,
-		providerInfo: info,
-		treeMode:     treeMode,
-		treemapMode:  treemapMode,
+		columns:        columns,
+		filters:        filter.NewFiltersList(defaultFilters...),
+		dirsTable:      buildTable(),
+		mode:           PENDING,
+		nav:            nav,
+		langFilterIdx:  -1, // Default to show all languages
+		selectMode:     false,
+		selectedLangs:  make(map[string]bool),
+		selectIndex:    0,
+		providerInfo:   info,
+		modeInfo:       modeInfo,
+		treeMode:       treeMode,
+		treemapMode:    treemapMode,
 		treemapSizeKey: SortByTotal,
-		sortState:    SortState{Key: SortByTotal, Desc: true},
-		searchInput:  searchInput,
+		sortState:      sortState,
+		sortCycle:      sortCycle,
+		searchInput:    searchInput,
 	}
 
 	return dm
@@ -319,9 +396,11 @@ func (dm *DirModel) View() string {
 	summary := dm.dirsSummary()
 	keyBindings := dm.dirsTable.Help.ShortHelpView(shortHelp)
 	if dm.fullHelp {
-		keyBindings = dm.dirsTable.Help.FullHelpView(
-			append(navigateKeyMap, dirsKeyMap...),
-		)
+		helpGroups := append(navigateKeyMap, dirsKeyMap...)
+		if dm.modeInfo.Changed() {
+			helpGroups = append(helpGroups, diffKeyMap)
+		}
+		keyBindings = dm.dirsTable.Help.FullHelpView(helpGroups)
 	}
 
 	// Calculate the available height for the main table
@@ -611,6 +690,12 @@ func (dm *DirModel) handleKeyBindings(msg tea.KeyMsg) (tea.Cmd, bool) {
 		dm.toggleSortOrder()
 		dm.updateTableData()
 		return nil, true
+	case toggleChanged:
+		if dm.modeInfo.Changed() {
+			dm.filters.ToggleFilter(filter.ChangedFilterID)
+			dm.updateTableData()
+			return nil, true
+		}
 	}
 
 	return nil, false
@@ -672,6 +757,44 @@ func (dm *DirModel) dirsSummary() string {
 		NewBarItem(dm.statusLangLabel(), "", 0),
 	)
 
+	if dm.modeInfo.Diff() {
+		// Diff mode summary: "<range> · N files changed · +A / -D · Δ net".
+		churn := dm.comparableChange(dm.nav.Entry())
+		items = append(items,
+			NewBarItem("RANGE", "#e36414", 0),
+			NewBarItem(dm.modeInfo.Range, "", 0),
+			NewBarItem("CHANGED", "#e36414", 0),
+			DefaultBarItem(dm.changedSummary()),
+			NewBarItem("CHURN", "#e36414", 0),
+			DefaultBarItem(fmt.Sprintf("+%d / -%d", churn.Added, churn.Deleted)),
+			NewBarItem("DELTA", "#e36414", 0),
+			DefaultBarItem(formatSigned(churn.Delta(), false)),
+		)
+	}
+
+	if dm.modeInfo.Compare() {
+		// Compare mode summary: "<range> · N files changed · ΔCode +X · ΔCmplx +Y".
+		stats := dm.comparableStats(dm.nav.Entry())
+		prev := dm.comparableChange(dm.nav.Entry())
+		items = append(items,
+			NewBarItem("RANGE", "#e36414", 0),
+			NewBarItem(dm.modeInfo.Range, "", 0),
+			NewBarItem("CHANGED", "#e36414", 0),
+			DefaultBarItem(dm.changedSummary()),
+			NewBarItem("ΔCODE", "#e36414", 0),
+			DefaultBarItem(formatSignedNum(stats.Code-prev.PrevCode)),
+			NewBarItem("ΔCMPLX", "#e36414", 0),
+			DefaultBarItem(formatSignedNum(stats.Complexity-prev.PrevComplexity)),
+		)
+	}
+
+	if dm.modeInfo.Kind == ModeRef {
+		items = append(items,
+			NewBarItem("REF", "#e36414", 0),
+			NewBarItem(dm.modeInfo.Range, "", 0),
+		)
+	}
+
 	if dm.treemapMode && dm.width >= showSortMinWidth {
 		colorMode := "dir"
 		if dm.treemapColorByLang {
@@ -698,6 +821,64 @@ func (dm *DirModel) dirsSummary() string {
 	)
 
 	return statusBarStyle.Margin(1, 0, 0, 0).Render(NewStatusBar(items, dm.width))
+}
+
+// changedOnly reports whether the changed-only filter is active (Diff and
+// Compare modes).
+func (dm *DirModel) changedOnly() bool {
+	cf, ok := dm.filters[filter.ChangedFilterID].(*filter.ChangedFilter)
+	return ok && cf.IsEnabled()
+}
+
+// compareChanged reports whether an entry's stats differ between the two
+// snapshots of Compare mode.
+func compareChanged(e *structure.Entry) bool {
+	return e.TotalStats.Code != e.Change.PrevCode ||
+		e.TotalStats.Complexity != e.Change.PrevComplexity
+}
+
+// entryChanged reports whether an entry carries any change, using the
+// semantics of the active mode. Diff mode uses change-set membership
+// (Change.Present) so zero-churn changes like binary files and pure renames
+// count as changed.
+func (dm *DirModel) entryChanged(e *structure.Entry) bool {
+	if dm.modeInfo.Compare() {
+		return compareChanged(e)
+	}
+	return e.Change.Present
+}
+
+// changedSummary returns the "N files" status bar value for Diff and Compare
+// modes, or the empty-diff hint when nothing changed.
+func (dm *DirModel) changedSummary() string {
+	changed := dm.changedFileCount(dm.nav.Entry())
+	if changed == 0 {
+		return fmt.Sprintf("no changes in %s", dm.modeInfo.Range)
+	}
+	return fmt.Sprintf("%d files", changed)
+}
+
+// changedFileCount returns the number of changed file entries under e,
+// memoized per directory for the status bar.
+func (dm *DirModel) changedFileCount(e *structure.Entry) int {
+	if dm.changedCountCache == nil {
+		dm.changedCountCache = make(map[*structure.Entry]int)
+	}
+	if n, ok := dm.changedCountCache[e]; ok {
+		return n
+	}
+	n := 0
+	if !e.IsDir {
+		if dm.entryChanged(e) {
+			n = 1
+		}
+	} else {
+		for _, child := range e.Child {
+			n += dm.changedFileCount(child)
+		}
+	}
+	dm.changedCountCache[e] = n
+	return n
 }
 
 // filteredChildren returns the current directory's children after applying
@@ -763,13 +944,19 @@ func (dm *DirModel) ExitSearchMode() {
 	}
 }
 
-// ShowFilePreview creates and shows a file preview
-func (dm *DirModel) ShowFilePreview(filePath string) {
+// ShowFilePreview creates and shows a file preview for the given entry. In
+// Diff/Compare modes the entry's Change is handed to the preview so renamed
+// files resolve their S1 path and added/deleted files get the right messaging.
+func (dm *DirModel) ShowFilePreview(entry *structure.Entry) {
 	if dm.mode == PREVIEW {
 		return // Already in preview mode
 	}
 
-	dm.filePreview = NewFilePreview(filePath, dm.width, dm.height)
+	if dm.modeInfo.Changed() {
+		dm.filePreview = NewFilePreviewDiff(entry.Path, dm.width, dm.height, dm.modeInfo, entry.Change)
+	} else {
+		dm.filePreview = NewFilePreview(entry.Path, dm.width, dm.height)
+	}
 	dm.mode = PREVIEW
 }
 

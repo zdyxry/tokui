@@ -241,4 +241,3 @@ func (p *SCCProvider) ignoredByGitIgnore(filePath, root string, cache map[string
 	}
 	return false
 }
-

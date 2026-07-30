@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -179,3 +180,48 @@ var _ provider.Provider = scc.New()
 
 // Verify the real app command exposes the provider flag for resolveProvider.
 var _ = appCmd.Flags().Lookup("provider")
+
+func TestSplitRange(t *testing.T) {
+	tests := []struct {
+		rangeSpec      string
+		wantS1, wantS2 string
+		wantWorktree   bool
+	}{
+		{"main...HEAD", "main", "HEAD", false},
+		{"main..HEAD", "main", "HEAD", false},
+		{"v1.0..v2.0", "v1.0", "v2.0", false},
+		{"main...", "main", "HEAD", false},
+		{"..HEAD", "HEAD", "HEAD", false},
+		{"HEAD", "HEAD", "", true},
+		{"HEAD~3", "HEAD~3", "", true},
+		{"abc123", "abc123", "", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.rangeSpec, func(t *testing.T) {
+			s1, s2, worktree := splitRange(tt.rangeSpec)
+			if s1 != tt.wantS1 || s2 != tt.wantS2 || worktree != tt.wantWorktree {
+				t.Errorf("splitRange(%q) = (%q, %q, %v), want (%q, %q, %v)",
+					tt.rangeSpec, s1, s2, worktree, tt.wantS1, tt.wantS2, tt.wantWorktree)
+			}
+		})
+	}
+}
+
+func TestReanchorResult(t *testing.T) {
+	srcRoot := t.TempDir()
+	dstRoot := t.TempDir()
+	result := provider.Result{Files: []provider.FileStats{
+		{Path: filepath.Join(srcRoot, "src", "main.go"), Language: "Go", Code: 10},
+		{Path: "relative.go", Language: "Go", Code: 5},
+	}}
+
+	got := reanchorResult(result, srcRoot, dstRoot)
+
+	if want := filepath.Join(dstRoot, "src", "main.go"); got.Files[0].Path != want {
+		t.Errorf("expected absolute path reanchored to %q, got %q", want, got.Files[0].Path)
+	}
+	if want := filepath.Join(dstRoot, "relative.go"); got.Files[1].Path != want {
+		t.Errorf("expected relative path reanchored to %q, got %q", want, got.Files[1].Path)
+	}
+}

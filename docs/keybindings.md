@@ -41,7 +41,7 @@
 |----------|------|
 | `INPUT` | 关闭过滤框，然后对当前选中项执行进入/展开/预览。 |
 | `SEARCH` | 跳转到选中的搜索结果并关闭搜索弹窗。 |
-| `READY` / `TREE` / `TREEMAP` | 选中 `..` → 返回上级；Tree 模式 → 展开/折叠目录；Treemap → 钻取；否则 → 进入目录或预览文件。 |
+| `READY` / `TREE` / `TREEMAP` | 选中 `..` → 返回上级；Tree 模式 → 目录展开/折叠、文件预览；Treemap → 钻取；否则 → 进入目录或预览文件。 |
 
 ---
 
@@ -66,6 +66,7 @@
 | `M` | 循环 Treemap 块大小指标（Total → Complexity → Bytes，需 scc Provider）。 |
 | `s` | 循环排序列。 |
 | `S` | 切换当前排序列的升序/降序。 |
+| `a` | （Diff/Compare 模式）切换「仅变更文件 / 全量文件」；全量时无变更的行灰色显示。 |
 | `?` | 显示/隐藏完整帮助面板。 |
 | `q` / `Ctrl+C` | 退出应用。 |
 
@@ -74,6 +75,14 @@
 按 `s` 会在以下列之间循环：
 
 `Name` → `Languages` → `Code` → `Comments` → `Blanks` → `Total` → `Percent` → `Complexity`
+
+Diff 模式（`tokui diff`）下排序列不同，循环为：
+
+`Name` → `+` → `-` → `Δ` → `%` → `Code` → `Total`（默认按 `|Δ|` 降序；`%` 为该目录/文件 churn 占当前目录总 churn 的百分比）
+
+Compare 模式（`tokui compare`）下循环为：
+
+`Name` → `ΔCode` → `ΔCmplx`（默认按 `|ΔCode|` 降序）
 
 按 `S` 切换方向。文本列默认升序，数值列默认降序。
 
@@ -145,6 +154,7 @@
 | `pgup` / `pgdown` | 向上/向下滚动一页。 |
 | `home` / `end` | 跳到文件顶部/底部。 |
 
+> Diff/Compare 模式下预览直接显示该文件的 diff：宽度足够时为左右两列并排（左 S1 右 S2，删除行红底、新增行绿底、带行号），宽度不足时降级为单列 unified diff（新增绿、删除红）；标题栏显示 diff range。其他模式显示文件全文。
 > 预览底部提示显示 `q/Esc` 关闭，方向键/`PgUp`/`PgDn`/`Home`/`End` 导航。
 
 ---
@@ -180,6 +190,7 @@ READY / TREE / TREEMAP
 ├── 搜索: Ctrl+P
 ├── 图表: Ctrl+W
 ├── 排序: s (换列), S (换方向)
+├── Diff/Compare 模式: a (仅变更/全量), 预览显示文件 diff
 ├── 编辑: e
 ├── 帮助: ?
 └── 退出: q, Ctrl+C
@@ -208,6 +219,7 @@ PREVIEW
 ├── q/Esc: 关闭
 ├── ↑/↓/j/k/pgup/pgdown: 滚动
 └── home/end: 跳到文件首尾
+    （Diff/Compare 模式下预览内容为该文件的 diff）
 ```
 
 ---
