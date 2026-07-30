@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -32,7 +33,7 @@ func initRepo(t *testing.T) string {
 // git runs a git command inside dir, failing the test on error.
 func git(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	full := append([]string{"-C", dir, "-c", "user.email=test@example.com", "-c", "user.name=Test User"}, args...)
+	full := append([]string{"-C", dir, "-c", "user.email=test@example.com", "-c", "user.name=Test User", "-c", "core.autocrlf=false"}, args...)
 	cmd := exec.Command("git", full...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
@@ -379,7 +380,11 @@ func TestNumstatDeletedBinary(t *testing.T) {
 
 func TestNumstatSpecialFilenames(t *testing.T) {
 	repo := initRepo(t)
-	names := []string{"a => b.txt", "with space.txt", "日本語.txt"}
+	names := []string{"with space.txt", "日本語.txt"}
+	if runtime.GOOS != "windows" {
+		// ">" is not allowed in Windows file names.
+		names = append([]string{"a => b.txt"}, names...)
+	}
 	for _, name := range names {
 		writeFile(t, repo, name, []byte("one\ntwo\n"))
 	}

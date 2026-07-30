@@ -185,34 +185,35 @@ func Archive(ref string) (dir string, cleanup func(), err error) {
 	}
 	cleanup = func() { _ = os.RemoveAll(dir) }
 
-	cmd := exec.Command("git", "archive", ref)
-	stdout, err := cmd.StdoutPipe()
+	// Write the archive to a file instead of streaming it through a pipe:
+	// tar output is padded to whole records, and an extract-side early exit
+	// can leave git blocked on a full pipe.
+	tarFile, err := os.CreateTemp("", "tokui-archive-*.tar")
 	if err != nil {
 		cleanup()
-		return "", nil, fmt.Errorf("failed to execute git archive: %w", err)
+		return "", nil, fmt.Errorf("failed to create temporary archive file: %w", err)
 	}
+	tarPath := tarFile.Name()
+	_ = tarFile.Close()
+	defer func() { _ = os.Remove(tarPath) }()
+
 	var stderr bytes.Buffer
+	cmd := exec.Command("git", "archive", "--output="+tarPath, ref)
 	cmd.Stderr = &stderr
-	if err := cmd.Start(); err != nil {
+	if err := cmd.Run(); err != nil {
 		cleanup()
-		return "", nil, fmt.Errorf("failed to execute git: %w", err)
+		return "", nil, fmt.Errorf("git archive %s failed: %w: %s", ref, err, strings.TrimSpace(stderr.String()))
 	}
-	extractErr := extractTar(stdout, dir)
-	if extractErr != nil {
-		// Do not leave git blocked writing to a pipe nobody reads: kill the
-		// process and reap it before returning.
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
+
+	f, err := os.Open(tarPath)
+	if err != nil {
 		cleanup()
-		return "", nil, fmt.Errorf("failed to extract git archive of %s: %w", ref, extractErr)
+		return "", nil, fmt.Errorf("failed to read git archive of %s: %w", ref, err)
 	}
-	// extractTar stops at the tar end-of-archive marker, leaving the final
-	// record padding unread; drain it so git can finish writing and exit
-	// instead of blocking on a full pipe.
-	_, _ = io.Copy(io.Discard, stdout)
-	if err := cmd.Wait(); err != nil {
+	defer func() { _ = f.Close() }()
+	if err := extractTar(f, dir); err != nil {
 		cleanup()
-		return "", nil, fmt.Errorf("git archive %s failed: %s", ref, strings.TrimSpace(stderr.String()))
+		return "", nil, fmt.Errorf("failed to extract git archive of %s: %w", ref, err)
 	}
 	return dir, cleanup, nil
 }

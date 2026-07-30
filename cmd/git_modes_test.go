@@ -425,7 +425,7 @@ func TestScopeChangesToSubdir(t *testing.T) {
 		{Path: "top.go"},
 		{Path: "other/d.go", OldPath: "sub/d.go", Kind: gitx.Renamed},
 	}
-	repo := string(filepath.Separator) + "repo"
+	repo := t.TempDir()
 
 	t.Run("repo root keeps everything", func(t *testing.T) {
 		got := scopeChangesToSubdir(changes, repo, repo)
