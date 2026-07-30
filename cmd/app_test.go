@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -208,17 +209,19 @@ func TestSplitRange(t *testing.T) {
 }
 
 func TestReanchorResult(t *testing.T) {
+	srcRoot := t.TempDir()
+	dstRoot := t.TempDir()
 	result := provider.Result{Files: []provider.FileStats{
-		{Path: "/tmp/tokui-archive-1/src/main.go", Language: "Go", Code: 10},
+		{Path: filepath.Join(srcRoot, "src", "main.go"), Language: "Go", Code: 10},
 		{Path: "relative.go", Language: "Go", Code: 5},
 	}}
 
-	got := reanchorResult(result, "/tmp/tokui-archive-1", "/repo")
+	got := reanchorResult(result, srcRoot, dstRoot)
 
-	if got.Files[0].Path != "/repo/src/main.go" {
-		t.Errorf("expected absolute path reanchored, got %q", got.Files[0].Path)
+	if want := filepath.Join(dstRoot, "src", "main.go"); got.Files[0].Path != want {
+		t.Errorf("expected absolute path reanchored to %q, got %q", want, got.Files[0].Path)
 	}
-	if got.Files[1].Path != "/repo/relative.go" {
-		t.Errorf("expected relative path reanchored, got %q", got.Files[1].Path)
+	if want := filepath.Join(dstRoot, "relative.go"); got.Files[1].Path != want {
+		t.Errorf("expected relative path reanchored to %q, got %q", want, got.Files[1].Path)
 	}
 }

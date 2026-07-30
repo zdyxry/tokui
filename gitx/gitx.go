@@ -127,7 +127,8 @@ func RepoRoot(path string) (string, error) {
 		}
 		return "", fmt.Errorf("%w: %s", ErrNotGitRepo, path)
 	}
-	return strings.TrimSpace(string(out)), nil
+	// git prints forward slashes even on Windows; normalize to OS separators.
+	return filepath.Clean(filepath.FromSlash(strings.TrimSpace(string(out)))), nil
 }
 
 // MergeBase returns the best common ancestor of a and b ("git merge-base a b"),
@@ -205,6 +206,10 @@ func Archive(ref string) (dir string, cleanup func(), err error) {
 		cleanup()
 		return "", nil, fmt.Errorf("failed to extract git archive of %s: %w", ref, extractErr)
 	}
+	// extractTar stops at the tar end-of-archive marker, leaving the final
+	// record padding unread; drain it so git can finish writing and exit
+	// instead of blocking on a full pipe.
+	_, _ = io.Copy(io.Discard, stdout)
 	if err := cmd.Wait(); err != nil {
 		cleanup()
 		return "", nil, fmt.Errorf("git archive %s failed: %s", ref, strings.TrimSpace(stderr.String()))
