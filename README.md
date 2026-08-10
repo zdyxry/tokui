@@ -1,3 +1,5 @@
+
+
 # 📊 Tokui
 
 [![Build](https://github.com/zdyxry/tokui/actions/workflows/build.yml/badge.svg)](https://github.com/zdyxry/tokui/actions/workflows/build.yml)
@@ -70,7 +72,7 @@ cd tokui
 make fetch-tokei-binaries
 
 # Build
-make build
+CGO_ENABLED=0 make build
 
 # Run
 ./bin/tokui
