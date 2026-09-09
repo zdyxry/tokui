@@ -59,6 +59,38 @@ var toggleHelpBinding = key.NewBinding(
 	),
 )
 
+// Tree-mode expand/collapse bindings, named so the short help bar can reuse them.
+var (
+	expandAllBinding = key.NewBinding(
+		key.WithKeys(expandAll.String(), "="),
+		key.WithHelp(
+			bindKeyStyle.Render("+/="),
+			helpDescStyle.Render(" - Expand all dirs (tree)"),
+		),
+	)
+	collapseAllBinding = key.NewBinding(
+		key.WithKeys(collapseAll.String()),
+		key.WithHelp(
+			bindKeyStyle.Render(collapseAll.String()),
+			helpDescStyle.Render(" - Collapse all dirs (tree)"),
+		),
+	)
+	expandSubtreeBinding = key.NewBinding(
+		key.WithKeys(expandSubtree.String()),
+		key.WithHelp(
+			bindKeyStyle.Render(expandSubtree.String()),
+			helpDescStyle.Render(" - Expand subtree (tree)"),
+		),
+	)
+	collapseSubtreeBinding = key.NewBinding(
+		key.WithKeys(collapseSubtree.String()),
+		key.WithHelp(
+			bindKeyStyle.Render(collapseSubtree.String()),
+			helpDescStyle.Render(" - Collapse subtree (tree)"),
+		),
+	)
+)
+
 var navigateKeyMap = [][]key.Binding{
 	{
 		key.NewBinding(
@@ -101,6 +133,16 @@ var navigateKeyMap = [][]key.Binding{
 
 var shortHelp = append(navigateKeyMap[0], toggleHelpBinding)
 
+// shortHelpTree is the bottom-bar help shown in tree mode: adds the
+// expand/collapse keys so they are discoverable without opening full help.
+var shortHelpTree = append(navigateKeyMap[0],
+	expandAllBinding,
+	collapseAllBinding,
+	expandSubtreeBinding,
+	collapseSubtreeBinding,
+	toggleHelpBinding,
+)
+
 var dirsKeyMap = [][]key.Binding{
 	{
 		key.NewBinding(
@@ -124,34 +166,10 @@ var dirsKeyMap = [][]key.Binding{
 				helpDescStyle.Render(" - Toggle tree mode"),
 			),
 		),
-		key.NewBinding(
-			key.WithKeys(expandAll.String(), "="),
-			key.WithHelp(
-				bindKeyStyle.Render(expandAll.String()),
-				helpDescStyle.Render(" - Expand all dirs (tree mode)"),
-			),
-		),
-		key.NewBinding(
-			key.WithKeys(collapseAll.String()),
-			key.WithHelp(
-				bindKeyStyle.Render(collapseAll.String()),
-				helpDescStyle.Render(" - Collapse all dirs (tree mode)"),
-			),
-		),
-		key.NewBinding(
-			key.WithKeys(expandSubtree.String()),
-			key.WithHelp(
-				bindKeyStyle.Render(expandSubtree.String()),
-				helpDescStyle.Render(" - Expand dir subtree (tree mode)"),
-			),
-		),
-		key.NewBinding(
-			key.WithKeys(collapseSubtree.String()),
-			key.WithHelp(
-				bindKeyStyle.Render(collapseSubtree.String()),
-				helpDescStyle.Render(" - Collapse dir subtree (tree mode)"),
-			),
-		),
+		expandAllBinding,
+		collapseAllBinding,
+		expandSubtreeBinding,
+		collapseSubtreeBinding,
 		key.NewBinding(
 			key.WithKeys(toggleTreemap.String()),
 			key.WithHelp(

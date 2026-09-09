@@ -394,7 +394,11 @@ func (dm *DirModel) View() string {
 	}
 
 	summary := dm.dirsSummary()
-	keyBindings := dm.dirsTable.Help.ShortHelpView(shortHelp)
+	shortHelpView := shortHelp
+	if dm.treeMode {
+		shortHelpView = shortHelpTree
+	}
+	keyBindings := dm.dirsTable.Help.ShortHelpView(shortHelpView)
 	if dm.fullHelp {
 		helpGroups := append(navigateKeyMap, dirsKeyMap...)
 		if dm.modeInfo.Changed() {
