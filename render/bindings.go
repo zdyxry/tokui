@@ -45,6 +45,10 @@ const (
 	cycleSortColumn    bindingKey = "s"
 	toggleSortOrder    bindingKey = "S"
 	toggleChanged      bindingKey = "a"
+	expandAll          bindingKey = "+"
+	collapseAll        bindingKey = "-"
+	expandSubtree      bindingKey = "O"
+	collapseSubtree    bindingKey = "X"
 )
 
 var toggleHelpBinding = key.NewBinding(
@@ -118,6 +122,34 @@ var dirsKeyMap = [][]key.Binding{
 			key.WithHelp(
 				bindKeyStyle.Render(toggleTree.String()),
 				helpDescStyle.Render(" - Toggle tree mode"),
+			),
+		),
+		key.NewBinding(
+			key.WithKeys(expandAll.String(), "="),
+			key.WithHelp(
+				bindKeyStyle.Render(expandAll.String()),
+				helpDescStyle.Render(" - Expand all dirs (tree mode)"),
+			),
+		),
+		key.NewBinding(
+			key.WithKeys(collapseAll.String()),
+			key.WithHelp(
+				bindKeyStyle.Render(collapseAll.String()),
+				helpDescStyle.Render(" - Collapse all dirs (tree mode)"),
+			),
+		),
+		key.NewBinding(
+			key.WithKeys(expandSubtree.String()),
+			key.WithHelp(
+				bindKeyStyle.Render(expandSubtree.String()),
+				helpDescStyle.Render(" - Expand dir subtree (tree mode)"),
+			),
+		),
+		key.NewBinding(
+			key.WithKeys(collapseSubtree.String()),
+			key.WithHelp(
+				bindKeyStyle.Render(collapseSubtree.String()),
+				helpDescStyle.Render(" - Collapse dir subtree (tree mode)"),
 			),
 		),
 		key.NewBinding(

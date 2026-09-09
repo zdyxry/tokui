@@ -659,6 +659,41 @@ func (dm *DirModel) handleKeyBindings(msg tea.KeyMsg) (tea.Cmd, bool) {
 			}
 			return cmd, true
 		}
+	case expandAll, "=":
+		// "=" is the unshifted physical key of "+"; both expand all.
+		if dm.treeMode {
+			cursorEntry := dm.SelectedEntry()
+			dm.expandAll()
+			dm.updateTableData()
+			dm.restoreCursor(cursorEntry)
+			return nil, true
+		}
+	case collapseAll:
+		if dm.treeMode {
+			cursorEntry := dm.SelectedEntry()
+			dm.collapseAll()
+			dm.updateTableData()
+			dm.restoreCursor(cursorEntry)
+			return nil, true
+		}
+	case expandSubtree:
+		if dm.treeMode {
+			if entry := dm.SelectedEntry(); entry != nil && entry.IsDir {
+				setTreeExpanded(entry, true)
+				dm.updateTableData()
+				dm.restoreCursor(entry)
+			}
+			return nil, true
+		}
+	case collapseSubtree:
+		if dm.treeMode {
+			if entry := dm.SelectedEntry(); entry != nil && entry.IsDir {
+				setTreeExpanded(entry, false)
+				dm.updateTableData()
+				dm.restoreCursor(entry)
+			}
+			return nil, true
+		}
 
 	case toggleLangSelect:
 		dm.mode = SELECT_LANG

@@ -455,3 +455,42 @@ func (dm *DirModel) updateTableData(resetCursor ...bool) {
 		}
 	}
 }
+
+// expandAll marks every directory under the current navigation entry as
+// expanded, so the tree view shows the full subtree.
+func (dm *DirModel) expandAll() {
+	setTreeExpanded(dm.nav.Entry(), true)
+}
+
+// collapseAll marks every directory under the current navigation entry as
+// collapsed, so the tree view shows only its direct children.
+func (dm *DirModel) collapseAll() {
+	setTreeExpanded(dm.nav.Entry(), false)
+}
+
+// setTreeExpanded recursively sets the Expanded flag on entry and all of its
+// descendant directories.
+func setTreeExpanded(entry *structure.Entry, expanded bool) {
+	if entry == nil || !entry.IsDir {
+		return
+	}
+	entry.Expanded = expanded
+	for _, child := range entry.Child {
+		setTreeExpanded(child, expanded)
+	}
+}
+
+// restoreCursor repositions the cursor on the given entry after the table rows
+// have been rebuilt, so expand/collapse operations keep the selection on the
+// same entry even when its row index shifts. When the entry is no longer
+// visible (e.g. pruned by filters), the clamping done by updateTableData
+// applies instead.
+func (dm *DirModel) restoreCursor(target *structure.Entry) {
+	if target == nil {
+		return
+	}
+	if idx := dm.findChildIndex(target); idx >= 0 {
+		dm.dirsTable.SetCursor(idx)
+		dm.nav.cursor = idx
+	}
+}
