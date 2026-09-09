@@ -394,7 +394,11 @@ func (dm *DirModel) View() string {
 	}
 
 	summary := dm.dirsSummary()
-	keyBindings := dm.dirsTable.Help.ShortHelpView(shortHelp)
+	shortHelpView := shortHelp
+	if dm.treeMode {
+		shortHelpView = shortHelpTree
+	}
+	keyBindings := dm.dirsTable.Help.ShortHelpView(shortHelpView)
 	if dm.fullHelp {
 		helpGroups := append(navigateKeyMap, dirsKeyMap...)
 		if dm.modeInfo.Changed() {
@@ -658,6 +662,40 @@ func (dm *DirModel) handleKeyBindings(msg tea.KeyMsg) (tea.Cmd, bool) {
 				return OpenFileInEditor{Path: entry.Path}
 			}
 			return cmd, true
+		}
+	case expandAll:
+		if dm.treeMode {
+			cursorEntry := dm.SelectedEntry()
+			dm.expandAll()
+			dm.updateTableData()
+			dm.restoreCursor(cursorEntry)
+			return nil, true
+		}
+	case collapseAll:
+		if dm.treeMode {
+			cursorEntry := dm.SelectedEntry()
+			dm.collapseAll()
+			dm.updateTableData()
+			dm.restoreCursor(cursorEntry)
+			return nil, true
+		}
+	case expandSubtree:
+		if dm.treeMode {
+			if entry := dm.SelectedEntry(); entry != nil && entry.IsDir {
+				setTreeExpanded(entry, true)
+				dm.updateTableData()
+				dm.restoreCursor(entry)
+			}
+			return nil, true
+		}
+	case collapseSubtree:
+		if dm.treeMode {
+			if entry := dm.SelectedEntry(); entry != nil && entry.IsDir {
+				setTreeExpanded(entry, false)
+				dm.updateTableData()
+				dm.restoreCursor(entry)
+			}
+			return nil, true
 		}
 
 	case toggleLangSelect:
