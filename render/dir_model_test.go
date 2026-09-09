@@ -351,25 +351,22 @@ func TestDirModelTreeExpandCollapseAll(t *testing.T) {
 		t.Fatalf("expected 2 rows before expand, got %d", got)
 	}
 
-	// "+" (and its unshifted physical key "=") expands every directory under
-	// the current navigation directory.
-	for _, r := range []rune{'+', '='} {
-		dm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
-		if !dm.nav.Entry().Expanded || !subdir.Expanded {
-			t.Errorf("expected %q to set Expanded=true on all dirs under nav", r)
-		}
-		if got := len(dm.dirsTable.Rows()); got != 3 {
-			t.Fatalf("expected 3 rows after expand all with %q, got %d", r, got)
-		}
+	// "}" expands every directory under the current navigation directory.
+	dm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'}'}})
+	if !dm.nav.Entry().Expanded || !subdir.Expanded {
+		t.Error("expected '}' to set Expanded=true on all dirs under nav")
+	}
+	if got := len(dm.dirsTable.Rows()); got != 3 {
+		t.Fatalf("expected 3 rows after expand all, got %d", got)
 	}
 
 	// Move the cursor onto the last (deepest) row so collapse must clamp it.
 	dm.dirsTable.SetCursor(len(dm.dirsTable.Rows()) - 1)
 
-	// "-" collapses every directory under the current navigation directory.
-	dm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'-'}})
+	// "{" collapses every directory under the current navigation directory.
+	dm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'{'}})
 	if dm.nav.Entry().Expanded || subdir.Expanded {
-		t.Error("expected '-' to set Expanded=false on all dirs under nav")
+		t.Error("expected '{' to set Expanded=false on all dirs under nav")
 	}
 	if got := len(dm.dirsTable.Rows()); got != 2 {
 		t.Fatalf("expected 2 rows after collapse all, got %d", got)
@@ -399,8 +396,8 @@ func TestDirModelExpandCollapseAllNoopOutsideTreeMode(t *testing.T) {
 	dm := newTestNestedDirModel()
 	dm.Update(ScanFinished{})
 
-	// Outside tree mode, "+", "=" and "-" do nothing.
-	for _, r := range []rune{'+', '=', '-'} {
+	// Outside tree mode, "}", "{", "]" and "[" do nothing.
+	for _, r := range []rune{'}', '{', ']', '['} {
 		_, cmd := dm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 		if cmd != nil {
 			t.Fatalf("expected %q outside tree mode to be a no-op", r)
@@ -448,7 +445,7 @@ func TestDirModelTreeExpandCollapseAllKeepsCursorEntry(t *testing.T) {
 	}
 
 	// Expanding all inserts dirA's child above z.go; the cursor must follow.
-	dm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'+'}})
+	dm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'}'}})
 	if got := len(dm.dirsTable.Rows()); got != 3 {
 		t.Fatalf("expected 3 rows after expand all, got %d", got)
 	}
@@ -457,7 +454,7 @@ func TestDirModelTreeExpandCollapseAllKeepsCursorEntry(t *testing.T) {
 	}
 
 	// Collapsing all removes the row again; the cursor must follow back.
-	dm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'-'}})
+	dm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'{'}})
 	if got := len(dm.dirsTable.Rows()); got != 2 {
 		t.Fatalf("expected 2 rows after collapse all, got %d", got)
 	}
@@ -498,13 +495,13 @@ func TestDirModelTreeExpandCollapseSubtree(t *testing.T) {
 		t.Fatalf("expected cursor on dirA, got %v", got)
 	}
 
-	// "O" recursively expands only the subtree under the cursor.
-	dm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'O'}})
+	// "]" recursively expands only the subtree under the cursor.
+	dm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
 	if !dirA.Expanded {
-		t.Error("expected 'O' to expand dirA")
+		t.Error("expected ']' to expand dirA")
 	}
 	if dirB.Expanded {
-		t.Error("expected 'O' to leave dirB collapsed")
+		t.Error("expected ']' to leave dirB collapsed")
 	}
 	if got := len(dm.dirsTable.Rows()); got != 3 {
 		t.Fatalf("expected 3 rows after subtree expand, got %d", got)
@@ -513,20 +510,20 @@ func TestDirModelTreeExpandCollapseSubtree(t *testing.T) {
 		t.Errorf("expected cursor to stay on dirA after subtree expand, got %v", got)
 	}
 
-	// "O"/"X" on a file are no-ops.
+	// "]"/"[" on a file are no-ops.
 	dm.dirsTable.SetCursor(1) // inner.go
-	dm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'O'}})
-	dm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'X'}})
+	dm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
+	dm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'['}})
 	if got := len(dm.dirsTable.Rows()); got != 3 {
 		t.Fatalf("expected subtree keys on a file to change nothing, got %d rows", got)
 	}
 
-	// "X" recursively collapses the subtree under the cursor; the cursor
+	// "[" recursively collapses the subtree under the cursor; the cursor
 	// directory itself stays visible because its parent chain is expanded.
 	dm.dirsTable.SetCursor(0)
-	dm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'X'}})
+	dm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'['}})
 	if dirA.Expanded {
-		t.Error("expected 'X' to collapse dirA")
+		t.Error("expected '[' to collapse dirA")
 	}
 	if got := len(dm.dirsTable.Rows()); got != 2 {
 		t.Fatalf("expected 2 rows after subtree collapse, got %d", got)

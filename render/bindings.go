@@ -45,10 +45,10 @@ const (
 	cycleSortColumn    bindingKey = "s"
 	toggleSortOrder    bindingKey = "S"
 	toggleChanged      bindingKey = "a"
-	expandAll          bindingKey = "+"
-	collapseAll        bindingKey = "-"
-	expandSubtree      bindingKey = "O"
-	collapseSubtree    bindingKey = "X"
+	expandAll          bindingKey = "}"
+	collapseAll        bindingKey = "{"
+	expandSubtree      bindingKey = "]"
+	collapseSubtree    bindingKey = "["
 )
 
 var toggleHelpBinding = key.NewBinding(
@@ -62,9 +62,9 @@ var toggleHelpBinding = key.NewBinding(
 // Tree-mode expand/collapse bindings, named so the short help bar can reuse them.
 var (
 	expandAllBinding = key.NewBinding(
-		key.WithKeys(expandAll.String(), "="),
+		key.WithKeys(expandAll.String()),
 		key.WithHelp(
-			bindKeyStyle.Render("+/="),
+			bindKeyStyle.Render(expandAll.String()),
 			helpDescStyle.Render(" - Expand all dirs (tree)"),
 		),
 	)

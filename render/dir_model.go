@@ -663,8 +663,7 @@ func (dm *DirModel) handleKeyBindings(msg tea.KeyMsg) (tea.Cmd, bool) {
 			}
 			return cmd, true
 		}
-	case expandAll, "=":
-		// "=" is the unshifted physical key of "+"; both expand all.
+	case expandAll:
 		if dm.treeMode {
 			cursorEntry := dm.SelectedEntry()
 			dm.expandAll()
