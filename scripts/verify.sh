@@ -101,10 +101,18 @@ else
     info "Skipped TOKEI_PATH priority test (no system tokei found)"
 fi
 
+# Check if current platform has a real binary embedded (used by steps 3 and 4)
+embed_size=$(stat -f%z "${PROJECT_DIR}/internal/binaries/embed/$(go env GOOS)_$(go env GOARCH)/tokei.gz" 2>/dev/null || \
+             stat -c%s "${PROJECT_DIR}/internal/binaries/embed/$(go env GOOS)_$(go env GOARCH)/tokei.gz" 2>/dev/null || \
+             echo 0)
+
 # ---------------------------------------------------------------------------
 echo ""
 echo "[3] Embedded fallback behavior"
 
+if [[ "$embed_size" -gt 10240 ]]; then
+    info "Skipped placeholder test (real tokei binary is embedded for this platform)"
+else
 # Build a small test to check placeholder vs real binary logic
 cat > "${PROJECT_DIR}/internal/binaries/verify_embed_test.go" << 'GOEOF'
 package binaries
@@ -143,20 +151,14 @@ else
     fail "Embedded fallback test failed"
 fi
 rm -f "${PROJECT_DIR}/internal/binaries/verify_embed_test.go"
+fi
 
 # ---------------------------------------------------------------------------
 echo ""
 echo "[4] Real embedded binary extraction (if available)"
 
-# Check if current platform has a real binary embedded
-embed_size=$(stat -f%z "${PROJECT_DIR}/internal/binaries/embed/$(go env GOOS)_$(go env GOARCH)/tokei.gz" 2>/dev/null || \
-             stat -c%s "${PROJECT_DIR}/internal/binaries/embed/$(go env GOOS)_$(go env GOARCH)/tokei.gz" 2>/dev/null || \
-             echo 0)
-
 if [[ "$embed_size" -gt 10240 ]]; then
     # Real binary is embedded. Test extraction.
-    os.RemoveAll("/tmp/tokui-tokei")
-
     cat > "${PROJECT_DIR}/internal/binaries/verify_real_test.go" << 'GOEOF'
 package binaries
 
