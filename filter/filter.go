@@ -33,8 +33,10 @@ func NewNameFilter(placeholder string) *NameFilter {
 
 	ti.Placeholder = placeholder
 	ti.Focus()
-	ti.Width = lipgloss.Width(placeholder)
 	ti.Prompt = "  " // 使用搜索图标 (Nerd Font: nf-fa-search)
+	// bubbles v1.0.0 的 placeholder 渲染会从 Width 中扣除 Prompt 宽度，
+	// 因此这里把 Prompt 宽度一并计入。
+	ti.Width = lipgloss.Width(placeholder) + lipgloss.Width(ti.Prompt)
 	ti.PromptStyle, ti.TextStyle = textStyle, textStyle
 
 	return &NameFilter{input: ti, enabled: false}
